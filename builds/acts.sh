@@ -15,6 +15,14 @@ mkdir -p $INSTALL_DIR $CLONE_DIR $BUILD_DIR
 export CXX="g++"
 export CXXFLAGS="-O3 -march=native"
 
+#Set python venv
+sudo apt -y install python3-pip python3-venv
+cd $BUILD_DIR
+python3 -m venv acts_venv
+source acts_venv/bin/activate
+pip install --upgrade pip
+pip install sympy numpy particle hatchling codegen pybind11
+
 #git-lfs and boost
 sudo apt-get update
 sudo apt -y install git-lfs libboost-all-dev
@@ -31,8 +39,8 @@ add_build $INSTALL_DIR/json nlohmann_json
 basic_cmake_tarball https://dlcdn.apache.org//xerces/c/3/sources/xerces-c-3.3.0.tar.gz xerces
 add_build $INSTALL_DIR/xerces xerces
 
-export XercesC_INCLUDE_DIR=$INSTALL_DIR/xerces-c-3.3.0/include
-export XercesC_LIBRARY=$INSTALL_DIR/xerces-c-3.3.0/lib/libxerces-c.so
+export XercesC_INCLUDE_DIR=$INSTALL_DIR/xerces/include
+export XercesC_LIBRARY=$INSTALL_DIR/xerces/lib/libxerces-c.so
 export XercesC_VERSION=3.3.0
 
 #oneTBB
@@ -51,6 +59,8 @@ make -j$(nproc)
 sudo make install 
 cd $CLONE_DIR
 add_build $INSTALL_DIR/pythia pythia
+export Pythia8_DIR=$INSTALL_DIR/pythia
+export Pythia_DIR=$INSTALL_DIR/pythia
 
 #root
 sudo apt -y install binutils cmake dpkg-dev g++ gcc libssl-dev git libx11-dev \
@@ -79,11 +89,35 @@ basic_cmake_github https://gitlab.cern.ch/hepmc/HepMC3.git -n HepMC3 -c "3.3.1" 
     -DHEPMC3_BUILD_EXAMPLES=ON                  \
     -DHEPMC3_ENABLE_PYTHON:BOOL=ON
 add_build $INSTALL_DIR/HepMC3 HepMC3
+export HepMC3_DIR=$INSTALL_DIR/HepMC3
 
 #LCIO
 basic_cmake_github https://github.com/iLCSoft/LCIO.git -n LCIO -c "v02-22-05"
 add_build $INSTALL_DIR/LCIO LCIO
 
 #geant4
-basic_cmake_github https://github.com/Geant4/geant4.git -n geant4 -c "v11.3.0"
-add_build $INSTALL_DIR/LCIO LCIO
+basic_cmake_github https://github.com/Geant4/geant4.git -n geant4 -c "v11.3.0" --cmake-args \
+    -DGEANT4_BUILD_MULTITHREADED=ON \
+    -DGEANT4_USE_GDML=ON \
+    -DGEANT4_INSTALL_DATA=ON \
+    -DGEANT4_BUILD_TLS_MODEL=global-dynamic \
+    -DXercesC_VERSION=3.3.0 \
+    -DCMAKE_CXX_FLAGS="-O3 -march=native -ftls-model=global-dynamic -fno-gnu-unique -fPIC" \
+    -DCMAKE_C_FLAGS="-O3 -march=native -ftls-model=global-dynamic -fno-gnu-unique -fPIC"
+add_build $INSTALL_DIR/geant4 geant4
+export DGeant4_DIR=$INSTALL_DIR/geant4
+
+
+#DD4Hep
+basic_cmake_github https://github.com/AIDASoft/DD4hep.git -n DD4hep -c "v01-32-01" --cmake-args \
+    -DDD4HEP_USE_GEANT4=ON \
+    -DBUILD_DOCS=OFF \
+    -DBoost_NO_BOOST_CMAKE=OFF \
+    -DDD4HEP_USE_LCIO=ON \
+    -DBUILD_TESTING=ON \
+    -DCMAKE_CXX_FLAGS="-O3 -march=native -ftls-model=global-dynamic -fno-gnu-unique -fPIC" 
+add_build $INSTALL_DIR/DD4hep DD4hep
+export DD4hep_DIR=$INSTALL_DIR/DD4hep
+
+#acts
+basic_cmake_github https://github.com/acts-project/acts -n acts -c "v44.2.0" --cmake-args \
