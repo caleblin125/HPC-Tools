@@ -115,21 +115,68 @@ export DGeant4_DIR=$INSTALL_DIR/geant4
 source geant4.sh
 
 #DD4Hep (running into issues where flags aren't spaced)
-basic_cmake_github https://github.com/AIDASoft/DD4hep.git -n DD4hep -c "v01-32-01" --cmake-args \
-    -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR/DD4hep \
-    -DDD4HEP_USE_GEANT4=ON \
+cd $CLONE_DIR
+git clone https://github.com/AIDASoft/DD4hep.git
+cd DD4hep
+git checkout v01-32-01
+
+mkdir -p $INSTALL_DIR/DD4hep $BUILD_DIR/DD4hep
+cd $BUILD_DIR/DD4hep
+sudo rm -rf CMakeCache.txt CMakeFiles $CLONE_DIR/DD4hep/CMakeCache.txt $CLONE_DIR/DD4hep/CMakeFiles
+sudo chown -R $USER:$USER $BUILD_DIR/DD4hep
+cmake -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR/DD4hep \
+    -DDD4HEP_USE_GEANT4=ON -DBUILD_DOCS=OFF \
+    -DBoost_NO_BOOST_CMAKE=OFF \
     -DDD4HEP_USE_LCIO=ON \
-    -DDD4HEP_USE_XERCESC=ON \
-    -DXercesC_INCLUDE_DIR=$INSTALL_DIR/xerces-c/include \
-    -DXercesC_LIBRARY=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
-    -DXercesC_LIBRARY_RELEASE=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
-    -DXercesC_LIBRARY_DEBUG=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
+    -DBUILD_TESTING=ON \
+    -DXercesC_INCLUDE_DIR=$INSTALL_DIR/xerces-c-3.3.0/include \
+    -DXercesC_LIBRARY=$INSTALL_DIR/xerces-c-3.3.0/lib/libxerces-c.so \
+    -DXercesC_LIBRARY_RELEASE=$INSTALL_DIR/xerces-c-3.3.0/lib/libxerces-c.so \
+    -DXercesC_LIBRARY_DEBUG=$INSTALL_DIR/xerces-c-3.3.0/lib/libxerces-c.so \
     -DXercesC_VERSION=3.3.0 \
     -DGeant4_DIR=$INSTALL_DIR/geant4 \
-    -DCMAKE_CXX_FLAGS="-ftls-model=global-dynamic -fno-gnu-unique -fPIC"
+    -DCMAKE_CXX_FLAGS="-ftls-model=global-dynamic -fno-gnu-unique -fPIC" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DROOT_DIR=$ROOTSYS
+     $CLONE_DIR/DD4hep
+cmake --build $BUILD_DIR/DD4hep -j$(nproc)
+sudo chown -R $USER:$USER $INSTALL_DIR/DD4hep
+cmake --install $BUILD_DIR/DD4hep
+# basic_cmake_github https://github.com/AIDASoft/DD4hep.git -n DD4hep -c "v01-32-01" --cmake-args \
+#     -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR/DD4hep \
+#     -DDD4HEP_USE_GEANT4=ON \
+#     -DDD4HEP_USE_LCIO=ON \
+#     -DDD4HEP_USE_XERCESC=ON \
+#     -DXercesC_INCLUDE_DIR=$INSTALL_DIR/xerces-c/include \
+#     -DXercesC_LIBRARY=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
+#     -DXercesC_LIBRARY_RELEASE=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
+#     -DXercesC_LIBRARY_DEBUG=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
+#     -DXercesC_VERSION=3.3.0 \
+#     -DROOT_DIR=$ROOTSYS \
+#     -DGeant4_DIR=$INSTALL_DIR/geant4 \
+#     -DCMAKE_CXX_FLAGS="-ftls-model=global-dynamic -fno-gnu-unique -fPIC"
 add_build $INSTALL_DIR/DD4hep DD4hep
 export DD4hep_DIR=$INSTALL_DIR/DD4hep
 
 #acts
-basic_cmake_github https://github.com/acts-project/acts -n acts -c "v44.2.0" --cmake-args
+basic_cmake_github https://github.com/acts-project/acts -n acts -c "v44.2.0" --cmake-args \
+    -DDD4HEP_USE_DD4HEP=ON \
+    -DDD4HEP_USE_PYTHIA8=ON \
+    -DDD4HEP_USE_HEPMC3=ON \
+    -DACTS_BUILD_PLUGIN_GEANT4=ON \
+    -DACTS_BUILD_PLUGIN_ROOT=ON \
+    -DACTS_BUILD_PLUGIN_DD4HEP=ON \
+    -DACTS_BUILD_ODD=ON \
+    -DACTS_BUILD_EXAMPLES_PYTHON_BINDINGS=ON \
+    -DACTS_BUILD_EXAMPLES_DD4HEP=ON \
+    -DACTS_BUILD_EXAMPLES_PYTHIA8=ON \
+    -DDD4hep_DIR=$INSTALL_DIR/DD4hep \
+    -DHepMC3_DIR=$INSTALL_DIR/HepMC3 \
+    -DPythia8_DIR=$INSTALL_DIR/pythia8313 \
+    -DCMAKE_CXX_FLAGS="$CXXFLAGS -I$INSTALL_DIR/DD4hep/include -I$INSTALL_DIR/HepMC3/include -I$INSTALL_DIR/Pythia8313/include"
 add_build $INSTALL_DIR/acts acts
+
+cd $BUILD_DIR/acts
+source this_acts_withdeps.sh
+python3 $CLONE_DIR/acts/Examples/Scripts/Python/full_chain_odd_sc25.py --ttbar --no-output-root --onlyWriteVertices
+
