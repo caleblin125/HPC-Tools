@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#NOTE: DOESN'T WORK
+
 #Use general functions
 source add_build.sh
 source basic_build.sh
@@ -13,7 +15,7 @@ mkdir -p $INSTALL_DIR $CLONE_DIR $BUILD_DIR
 
 #Set flags
 export CXX="g++"
-export CXXFLAGS="-O3 -march=native"
+export CXXFLAGS=" -O3 -march=native "
 
 #Set python venv
 sudo apt -y install python3-pip python3-venv
@@ -35,12 +37,12 @@ add_build $INSTALL_DIR/eigen eigen
 basic_cmake_github https://github.com/nlohmann/json.git -n nlohmann_json -c v3.11.3
 add_build $INSTALL_DIR/json nlohmann_json
 
-#Xerces
-basic_cmake_tarball https://dlcdn.apache.org//xerces/c/3/sources/xerces-c-3.3.0.tar.gz xerces
-add_build $INSTALL_DIR/xerces xerces
+#Xerces-c
+basic_cmake_tarball https://dlcdn.apache.org//xerces/c/3/sources/xerces-c-3.3.0.tar.gz xerces-c
+add_build $INSTALL_DIR/xerces-c xerces-c
 
-export XercesC_INCLUDE_DIR=$INSTALL_DIR/xerces/include
-export XercesC_LIBRARY=$INSTALL_DIR/xerces/lib/libxerces-c.so
+export XercesC_INCLUDE_DIR=$INSTALL_DIR/xerces-c/include
+export XercesC_LIBRARY=$INSTALL_DIR/xerces-c/lib/libxerces-c.so
 export XercesC_VERSION=3.3.0
 
 #oneTBB
@@ -95,7 +97,7 @@ export HepMC3_DIR=$INSTALL_DIR/HepMC3
 basic_cmake_github https://github.com/iLCSoft/LCIO.git -n LCIO -c "v02-22-05"
 add_build $INSTALL_DIR/LCIO LCIO
 
-#geant4 (can't see Xerces shell variables for some reason)
+#geant4 (can't see Xerces-c shell variables for some reason)
 basic_cmake_github https://github.com/Geant4/geant4.git -n geant4 -c "v11.3.0" --cmake-args \
     -DGEANT4_BUILD_MULTITHREADED=ON \
     -DGEANT4_USE_GDML=ON \
@@ -106,22 +108,28 @@ basic_cmake_github https://github.com/Geant4/geant4.git -n geant4 -c "v11.3.0" -
     -DXercesC_LIBRARY_RELEASE=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
     -DXercesC_LIBRARY_DEBUG=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
     -DXercesC_VERSION=3.3.0 \
-    -DCMAKE_CXX_FLAGS="-O3 -march=native -ftls-model=global-dynamic -fno-gnu-unique -fPIC" \
-    -DCMAKE_C_FLAGS="-O3 -march=native -ftls-model=global-dynamic -fno-gnu-unique -fPIC"
+    -DCMAKE_CXX_FLAGS=" -O3 -march=native -ftls-model=global-dynamic -fno-gnu-unique -fPIC" \
+    -DCMAKE_C_FLAGS=" -O3 -march=native -ftls-model=global-dynamic -fno-gnu-unique -fPIC"
 add_build $INSTALL_DIR/geant4 geant4
 export DGeant4_DIR=$INSTALL_DIR/geant4
+source geant4.sh
 
-
-#DD4Hep
+#DD4Hep (running into issues where flags aren't spaced)
 basic_cmake_github https://github.com/AIDASoft/DD4hep.git -n DD4hep -c "v01-32-01" --cmake-args \
+    -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR/DD4hep \
     -DDD4HEP_USE_GEANT4=ON \
-    -DBUILD_DOCS=OFF \
-    -DBoost_NO_BOOST_CMAKE=OFF \
     -DDD4HEP_USE_LCIO=ON \
-    -DBUILD_TESTING=ON \
-    -DCMAKE_CXX_FLAGS="-O3 -march=native -ftls-model=global-dynamic -fno-gnu-unique -fPIC" 
+    -DDD4HEP_USE_XERCESC=ON \
+    -DXercesC_INCLUDE_DIR=$INSTALL_DIR/xerces-c/include \
+    -DXercesC_LIBRARY=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
+    -DXercesC_LIBRARY_RELEASE=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
+    -DXercesC_LIBRARY_DEBUG=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
+    -DXercesC_VERSION=3.3.0 \
+    -DGeant4_DIR=$INSTALL_DIR/geant4 \
+    -DCMAKE_CXX_FLAGS="-ftls-model=global-dynamic -fno-gnu-unique -fPIC"
 add_build $INSTALL_DIR/DD4hep DD4hep
 export DD4hep_DIR=$INSTALL_DIR/DD4hep
 
 #acts
-basic_cmake_github https://github.com/acts-project/acts -n acts -c "v44.2.0" --cmake-args \
+basic_cmake_github https://github.com/acts-project/acts -n acts -c "v44.2.0" --cmake-args
+add_build $INSTALL_DIR/acts acts

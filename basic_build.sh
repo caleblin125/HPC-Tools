@@ -143,10 +143,6 @@ basic_cmake_tarball() {
         return 1
     fi
 
-    # Prepare install path
-    local installpath="$install_dir/$name"
-    mkdir -p "$installpath"
-
     #Build
     echo "=== Building $name ==="
     mkdir -p $buildpath
