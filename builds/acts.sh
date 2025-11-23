@@ -95,12 +95,16 @@ export HepMC3_DIR=$INSTALL_DIR/HepMC3
 basic_cmake_github https://github.com/iLCSoft/LCIO.git -n LCIO -c "v02-22-05"
 add_build $INSTALL_DIR/LCIO LCIO
 
-#geant4
+#geant4 (can't see Xerces shell variables for some reason)
 basic_cmake_github https://github.com/Geant4/geant4.git -n geant4 -c "v11.3.0" --cmake-args \
     -DGEANT4_BUILD_MULTITHREADED=ON \
     -DGEANT4_USE_GDML=ON \
     -DGEANT4_INSTALL_DATA=ON \
     -DGEANT4_BUILD_TLS_MODEL=global-dynamic \
+    -DXercesC_INCLUDE_DIR=$INSTALL_DIR/xerces-c/include \
+    -DXercesC_LIBRARY=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
+    -DXercesC_LIBRARY_RELEASE=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
+    -DXercesC_LIBRARY_DEBUG=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
     -DXercesC_VERSION=3.3.0 \
     -DCMAKE_CXX_FLAGS="-O3 -march=native -ftls-model=global-dynamic -fno-gnu-unique -fPIC" \
     -DCMAKE_C_FLAGS="-O3 -march=native -ftls-model=global-dynamic -fno-gnu-unique -fPIC"

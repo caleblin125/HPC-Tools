@@ -152,12 +152,12 @@ basic_cmake_tarball() {
     mkdir -p $buildpath
     sudo chown -R $USER:$USER $buildpath
     cd "$buildpath" || return 1
-    cmake "$clonepath" -DCMAKE_INSTALL_PREFIX="$installpath" "${cmake_args[@]}"
-    cmake --build $buildpath -j$(nproc)
+    cmake "$clonepath" -DCMAKE_INSTALL_PREFIX="$installpath" "${cmake_args[@]}" || return 1
+    cmake --build $buildpath -j$(nproc) || return 1
 
     #Install
     echo "=== Installing $name ==="
     mkdir -p $installpath
     sudo chown -R $USER:$USER $installpath
-    sudo cmake --install $buildpath
+    sudo cmake --install $buildpath || return 1
 }
