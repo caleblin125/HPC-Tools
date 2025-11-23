@@ -52,17 +52,17 @@ add_build $INSTALL_DIR/oneTBB oneTBB
 #pythia
 cd $CLONE_DIR
 wget https://pythia.org/download/pythia83/pythia8313.tgz
-tar -xzf pythia8313.tgz -C pythia
+tar -xzf pythia8313.tgz -C pythia8
 rm -rf pythia8313.tgz
-cd pythia8313
-mkdir $INSTALL_DIR/pythia
-./configure --prefix=$INSTALL_DIR/pythia
+cd pythia8
+mkdir $INSTALL_DIR/pythia8
+./configure --prefix=$INSTALL_DIR/pythia8
 make -j$(nproc)
 sudo make install 
 cd $CLONE_DIR
-add_build $INSTALL_DIR/pythia pythia
-export Pythia8_DIR=$INSTALL_DIR/pythia
-export Pythia_DIR=$INSTALL_DIR/pythia
+add_build $INSTALL_DIR/pythia pythia8
+export Pythia8_DIR=$INSTALL_DIR/pythia8
+export Pythia_DIR=$INSTALL_DIR/pythia8
 
 #root
 sudo apt -y install binutils cmake dpkg-dev g++ gcc libssl-dev git libx11-dev \
@@ -125,19 +125,21 @@ cd $BUILD_DIR/DD4hep
 sudo rm -rf CMakeCache.txt CMakeFiles $CLONE_DIR/DD4hep/CMakeCache.txt $CLONE_DIR/DD4hep/CMakeFiles
 sudo chown -R $USER:$USER $BUILD_DIR/DD4hep
 cmake -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR/DD4hep \
-    -DDD4HEP_USE_GEANT4=ON -DBUILD_DOCS=OFF \
+    -DDD4HEP_USE_GEANT4=ON \
+    -DBUILD_DOCS=OFF \
     -DBoost_NO_BOOST_CMAKE=OFF \
     -DDD4HEP_USE_LCIO=ON \
+    -DDD4HEP_USE_XERCESC=ON \
     -DBUILD_TESTING=ON \
-    -DXercesC_INCLUDE_DIR=$INSTALL_DIR/xerces-c-3.3.0/include \
-    -DXercesC_LIBRARY=$INSTALL_DIR/xerces-c-3.3.0/lib/libxerces-c.so \
-    -DXercesC_LIBRARY_RELEASE=$INSTALL_DIR/xerces-c-3.3.0/lib/libxerces-c.so \
-    -DXercesC_LIBRARY_DEBUG=$INSTALL_DIR/xerces-c-3.3.0/lib/libxerces-c.so \
+    -DXercesC_INCLUDE_DIR=$INSTALL_DIR/xerces-c/include \
+    -DXercesC_LIBRARY=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
+    -DXercesC_LIBRARY_RELEASE=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
+    -DXercesC_LIBRARY_DEBUG=$INSTALL_DIR/xerces-c/lib/libxerces-c.so \
     -DXercesC_VERSION=3.3.0 \
     -DGeant4_DIR=$INSTALL_DIR/geant4 \
     -DCMAKE_CXX_FLAGS="-ftls-model=global-dynamic -fno-gnu-unique -fPIC" \
     -DCMAKE_BUILD_TYPE=Release \
-    -DROOT_DIR=$ROOTSYS
+    -DROOT_DIR=$ROOTSYS \
      $CLONE_DIR/DD4hep
 cmake --build $BUILD_DIR/DD4hep -j$(nproc)
 sudo chown -R $USER:$USER $INSTALL_DIR/DD4hep
@@ -157,6 +159,7 @@ cmake --install $BUILD_DIR/DD4hep
 #     -DCMAKE_CXX_FLAGS="-ftls-model=global-dynamic -fno-gnu-unique -fPIC"
 add_build $INSTALL_DIR/DD4hep DD4hep
 export DD4hep_DIR=$INSTALL_DIR/DD4hep
+source thisdd4hep.sh
 
 #acts
 basic_cmake_github https://github.com/acts-project/acts -n acts -c "v44.2.0" --cmake-args \
@@ -172,11 +175,30 @@ basic_cmake_github https://github.com/acts-project/acts -n acts -c "v44.2.0" --c
     -DACTS_BUILD_EXAMPLES_PYTHIA8=ON \
     -DDD4hep_DIR=$INSTALL_DIR/DD4hep \
     -DHepMC3_DIR=$INSTALL_DIR/HepMC3 \
-    -DPythia8_DIR=$INSTALL_DIR/pythia8313 \
-    -DCMAKE_CXX_FLAGS="$CXXFLAGS -I$INSTALL_DIR/DD4hep/include -I$INSTALL_DIR/HepMC3/include -I$INSTALL_DIR/Pythia8313/include"
+    -DPythia8_DIR=$INSTALL_DIR/pythia8 \
+    -DCMAKE_CXX_FLAGS="$CXXFLAGS -I$INSTALL_DIR/DD4hep/include -I$INSTALL_DIR/HepMC3/include -I$INSTALL_DIR/pythia8/include"
 add_build $INSTALL_DIR/acts acts
 
-cd $BUILD_DIR/acts
 source this_acts_withdeps.sh
 python3 $CLONE_DIR/acts/Examples/Scripts/Python/full_chain_odd_sc25.py --ttbar --no-output-root --onlyWriteVertices
 
+
+#PATHS
+add_build $INSTALL_DIR/eigen eigen
+add_build $INSTALL_DIR/json nlohmann_json
+add_build $INSTALL_DIR/xerces-c xerces-c
+export XercesC_INCLUDE_DIR=$INSTALL_DIR/xerces-c/include
+export XercesC_LIBRARY=$INSTALL_DIR/xerces-c/lib/libxerces-c.so
+export XercesC_VERSION=3.3.0
+add_build $INSTALL_DIR/oneTBB oneTBB
+add_build $INSTALL_DIR/root root
+source thisroot.sh
+add_build $INSTALL_DIR/HepMC3 HepMC3
+export HepMC3_DIR=$INSTALL_DIR/HepMC3
+add_build $INSTALL_DIR/LCIO LCIO
+add_build $INSTALL_DIR/geant4 geant4
+export DGeant4_DIR=$INSTALL_DIR/geant4
+source geant4.sh
+add_build $INSTALL_DIR/DD4hep DD4hep
+export DD4hep_DIR=$INSTALL_DIR/DD4hep
+source thisdd4hep.sh

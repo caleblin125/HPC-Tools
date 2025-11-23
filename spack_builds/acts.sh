@@ -1,7 +1,8 @@
 spack install boost@1.86.0 eigen@3.4.0 nlohmann-json@3.11.3 xerces-c@3.3.0 intel-tbb@2022.2.0
 
+spack install root@6.34.04 +pythia8 +tbb ~xrootd ^pythia8@8.313
+# spack install root@6.34.04 +jemalloc +pythia8 +tbb ~xrootd ^pythia8@8.313
 spack install pythia8@8.313 +hepmc3 ^boost@1.86.0
-spack install root@6.34.04 +jemalloc +pythia8 +tbb ~xrootd 
 spack install hepmc3@3.3.1 ~rootio ~protobuf +python +interfaces ^root@6.34.04
 spack install lcio@2.22.5 ^root@6.34.04
 spack install geant4@11.3.0 +threads +data ^boost@1.86.0 ^root@6.34.04 ^intel-tbb@2022.2.0 ^xerces-c@3.3.0
