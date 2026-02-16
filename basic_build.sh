@@ -3,12 +3,17 @@
 basic_cmake_github(){
     local repo_url="$1"
     shift 1
+    local configure=OFF
     local name=""
     local checkout=""
     local cmake_args=()
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            -configure)
+                configure="$2"
+                shift 2
+                ;;
             -c|--checkout)
                 checkout="$2"
                 shift 2
@@ -33,7 +38,7 @@ basic_cmake_github(){
 
     # Validate required arguments
     if [[ -z "$repo_url" ]]; then
-        echo "Usage: build_cmake_project <repo> [-c <ref>] [--cmake-args <args>]"
+        echo "Usage: build_cmake_project <repo> [-c <branch/ref>] [--configure <ON/OFF>] [--cmake-args <args>]"
         return 1
     fi
 
@@ -73,29 +78,44 @@ basic_cmake_github(){
     #Checkout branch
     [[ -n "$checkout" ]] && git checkout "$checkout"
 
-    #Build
-    echo "=== Building $name ==="
-    mkdir -p $buildpath
-    sudo chown -R $USER:$USER $buildpath
-    cd "$buildpath" || return 1
-    cmake "$clonepath" -DCMAKE_INSTALL_PREFIX="$installpath" -DCMAKE_BUILD_TYPE=RELEASE "${cmake_args[@]}"
-    cmake --build $buildpath -j$(nproc)
+    
+    if [[ $configure = "ON" ]]; then
+        #configure
+        cd $clonepath || return 1
+        echo "=== Configuring $name ==="
+        ./configure --prefix=$installpath "${cmake_args[@]}" || return 1
+        echo "=== Building $name ==="
+        make -j$(nproc) all || return 1
+        echo "=== Installing $name ==="
+        make install || return 1
+    elif [[ $configure = "OFF" ]]; then
+        #Build
+        echo "=== Building $name ==="
+        mkdir -p $buildpath
+        cd "$buildpath" || return 1
+        cmake "$clonepath" -DCMAKE_INSTALL_PREFIX="$installpath" "${cmake_args[@]}" || return 1
+        cmake --build $buildpath -j$(nproc) || return 1
 
-    #Install
-    echo "=== Installing $name ==="
-    mkdir -p $installpath
-    sudo chown -R $USER:$USER $installpath
-    sudo cmake --install $buildpath
+        #Install
+        echo "=== Installing $name ==="
+        mkdir -p $installpath
+        cmake --install $buildpath || return 1
+    else 
+        echo "ERROR: -configure neither ON or OFF"
+    fi
 }
 
 basic_cmake_tarball() {
     local url="$1"
-    local name="$2"
+    shift 1
+    local configure=OFF
     local tarfile=""
     local src_dir=""
+    local name=""
+    local cmake_args=()
 
     if [[ -z "$url" ]]; then
-        echo "Usage: build_tarball_project <url> [name]"
+        echo "Usage: build_tarball_project <url> [-n <name>] [-configure <ON/OFF>] [--cmake-args <args>]"
         return 1
     fi
 
@@ -111,6 +131,30 @@ basic_cmake_tarball() {
         echo "ERROR: INSTALL_DIR unset"
         return 1
     fi
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -configure)
+                configure="$2"
+                shift 2
+                ;;
+            -n|--name)
+                name="$2"
+                shift 2
+                ;;
+            --cmake-args)
+                shift
+                while [[ $# -gt 0 ]]; do
+                    cmake_args+=("$1")
+                    shift
+                done
+                ;;
+            *)
+                echo "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
 
     # Derive name from URL if not provided
     [[ -z "$name" ]] && name=$(basename "$url" | sed -E 's/\.tar\.(gz|bz2|xz|tgz)$//')
@@ -130,30 +174,44 @@ basic_cmake_tarball() {
     fi
 
     # Extract
-    rm -rf "$clonepath"
-    mkdir -p "$clonepath"
-    if [[ "$tarfile" == *.tar.gz || "$tarfile" == *.tgz ]]; then
-        tar -xzf "$tarfile" -C "$clonepath" --strip-components=1
-    elif [[ "$tarfile" == *.tar.bz2 ]]; then
-        tar -xjf "$tarfile" -C "$clonepath" --strip-components=1
-    elif [[ "$tarfile" == *.tar.xz ]]; then
-        tar -xJf "$tarfile" -C "$clonepath" --strip-components=1
-    else
-        echo "Unsupported archive format: $tarfile"
-        return 1
+    if [[ ! -d "$clonepath" ]]; then 
+        mkdir -p "$clonepath"
+        if [[ "$tarfile" == *.tar.gz || "$tarfile" == *.tgz ]]; then
+            tar -xzf "$tarfile" -C "$clonepath" --strip-components=1
+        elif [[ "$tarfile" == *.tar.bz2 ]]; then
+            tar -xjf "$tarfile" -C "$clonepath" --strip-components=1
+        elif [[ "$tarfile" == *.tar.xz ]]; then
+            tar -xJf "$tarfile" -C "$clonepath" --strip-components=1
+        else
+            echo "Unsupported archive format: $tarfile"
+            return 1
+        fi
+    else 
+        echo "Folder already exists, assuming already unpacked"
     fi
 
-    #Build
-    echo "=== Building $name ==="
-    mkdir -p $buildpath
-    sudo chown -R $USER:$USER $buildpath
-    cd "$buildpath" || return 1
-    cmake "$clonepath" -DCMAKE_INSTALL_PREFIX="$installpath" "${cmake_args[@]}" || return 1
-    cmake --build $buildpath -j$(nproc) || return 1
+    if [[ $configure = "ON" ]]; then
+        #configure
+        cd $clonepath || return 1
+        echo "=== Configuring $name ==="
+        ./configure --prefix=$installpath "${cmake_args[@]}" || return 1
+        echo "=== Building $name ==="
+        make -j$(nproc) all || return 1
+        echo "=== Installing $name ==="
+        make install || return 1
+    elif [[ $configure = "OFF" ]]; then
+        #Build
+        echo "=== Building $name ==="
+        mkdir -p $buildpath
+        cd "$buildpath" || return 1
+        cmake "$clonepath" -DCMAKE_INSTALL_PREFIX="$installpath" "${cmake_args[@]}" || return 1
+        cmake --build $buildpath -j$(nproc) || return 1
 
-    #Install
-    echo "=== Installing $name ==="
-    mkdir -p $installpath
-    sudo chown -R $USER:$USER $installpath
-    sudo cmake --install $buildpath || return 1
+        #Install
+        echo "=== Installing $name ==="
+        mkdir -p $installpath
+        cmake --install $buildpath || return 1
+    else 
+        echo "ERROR: -configure neither ON or OFF"
+    fi
 }
