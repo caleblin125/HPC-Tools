@@ -55,6 +55,8 @@ basic_cmake_github(){
         return 1
     fi
 
+    mkdir -p $CLONE_DIR $BUILD_DIR $INSTALL_DIR
+
     # use github name if name is not offered
     if [[ -z "$name" ]]; then
         local name=$(basename "$repo_url" .git)
@@ -158,6 +160,8 @@ basic_cmake_tarball() {
 
     # Derive name from URL if not provided
     [[ -z "$name" ]] && name=$(basename "$url" | sed -E 's/\.tar\.(gz|bz2|xz|tgz)$//')
+
+    mkdir -p $CLONE_DIR $BUILD_DIR $INSTALL_DIR
 
     local clonepath="$CLONE_DIR/$name"
     local buildpath="$BUILD_DIR/$name"
