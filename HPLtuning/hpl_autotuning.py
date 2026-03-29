@@ -4,19 +4,28 @@ import re
 import os
 import subprocess
 import json
+import time
 import math
 import matplotlib.pyplot as plt
 import numpy as np
 import statsmodels.api as sm
 import pandas as pd
 import argparse
+from pathlib import Path
 
-sample = "HPL.dat"
+script_location = Path(__file__).resolve().parent
+
+sample = os.path.join(script_location, "HPL.dat")
 sampleName, sampleExtension = sample.split(".")
 
 with open(sample, "r") as file:
     sampleLines = file.readlines()
     sampleText = "".join(sampleLines)
+    
+batch = os.path.join(script_location, "hpl.job")
+with open(batch, "r") as file:
+    batchLines = file.readlines()
+    batchText = "".join(sampleLines)
 
 class Param():
     def __init__(self, name:str, values:list):
@@ -83,6 +92,9 @@ class Param():
     def __repr__(self) -> str:
         return str(self)
 
+ROOT = os.getcwd()
+HPL_LOCATION = "/global/common/software/m4007/opt/hpl-2.3/bin/xhpl"
+
 RAM = 512 #Gigabytes
 PERCENT = 0.9
 MAX_NS = int((PERCENT * RAM * 10e9 / 8) ** 0.5)
@@ -95,7 +107,7 @@ NUDGE_NUM = 3
 NUDGE_JUMP = 0.05
 
 params = [
-    Param("NS",         [i for i in range(int(0.7*MAX_NS), MAX_NS)]),
+    Param("NS",         [int(i * 0.3) for i in range(int(0.7*MAX_NS), MAX_NS)]), #Testing small first
     Param("NB",         [i for i in range(50, 600)]),
     Param("PMAP",       [0, 1]),
     Param("PFACT",      [0, 1, 2]),
@@ -108,6 +120,14 @@ params = [
     Param("U",          [0, 1]),
     Param("P",          [i for i in range(1, TOTAL_TASKS+1) if (TOTAL_TASKS % i == 0)]),
     Param("Q",          [i for i in range(1, TOTAL_TASKS+1) if (TOTAL_TASKS % i == 0)])
+]
+
+batchParams = [
+    Param("NODES", [NODES]),
+    Param("TASKS", [TOTAL_TASKS]),
+    Param("HPL_LOCATION", [HPL_LOCATION]),
+    Param("ROOT", [ROOT]),
+    Param("DESCRIPTION", ["autotuning"]),
 ]
 
 #Method to generate random parameters
@@ -150,7 +170,6 @@ def heuristic(entry):
         return entry["GFlops"]
     else:
         return 0
-
 
 def parseHPL(filename):
     file = open(filename, "r")
@@ -234,27 +253,24 @@ def generateRand(index:int, params:"list[Param]" = params, nudgeP=False):
     
     print("New Parameters:", newP)
     writeFile(file, newP)
-
-    os.chdir("../")
-    name = file.split('.')[0]
-    os.system(f"make pynqvivado_au250_hw CONFIG={name} &> /dev/null")
-    succeeded = os.path.exists(f"synth/pynqvivado_au250/build/{name}/hw/kernel.xclbin")
-    os.system(f"yes | rm -r synth/pynqvivado_au250/build/{name}")
-    os.system(f"yes | rm -r synth/build/{name}")
     
+    description = getParam(batchParams, "DESCRIPTION")
+    description.rand = f"Autotuning test {index} {'modified' if nudgeP else 'random'}"
+    writeFile("hpl.job", batchParams)
+    
+    raise Exception
     #Run python emulation
     python_result = subprocess.run(
-        ["python3", "-m", "sw_utils", "report_instruction_timing", f"config/{file}", "370M"],
-        env={**os.environ, "PYTHONPATH": "sw_utils"},
+        ["sbatch", "hpl.job"],
+        env={**os.environ},
         capture_output=True,
         text=True
     )
-    text_output = python_result.stdout.split("\n")[-3:-1]
-    singlecore = text_output[0].split("=")[1].strip()
-    multicore = text_output[1].split("=")[1].strip()
-    print("succeed", succeeded,"; singlecore: ", singlecore, "; multicore", multicore)
+    text_output = python_result.stdout
+    
+    print("succeed", succeeded,"; GFlops: ", singlecore)
 
-    os.chdir("config")
+    os.makedirs("gen_configs", exist_ok = True)
     os.system(f"mv {file} gen_configs")
 
     entry = {
@@ -332,9 +348,9 @@ def plot():
     except:
         pass
     
-epochs = 50
+epochs = 3
 batches = 10
-top = 3
+top = 7
 initRand = True
 if __name__ == "__main__":
     tested = os.listdir("gen_configs")

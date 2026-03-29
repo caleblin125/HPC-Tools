@@ -14,13 +14,14 @@ ROOT="<ROOT>"
 OUTPUT=$ROOT/output
 
 FILENAME="HPL_RUN"
-DESCRIPTION="$FILENAME with some parameters"
+DESCRIPTION="$FILENAME, <DESCRIPTION>"
 
 echo "$SLURM_JOB_ID : $DESCRIPTION" >> $OUTPUT/descriptions.txt
 
 OUTDIR=$OUTPUT/$FILENAME
 mkdir -p $OUTDIR
 
+srun $HPL | tee $OUTDIR/hpl_$SLURM_JOB_ID.out
 
 
 
