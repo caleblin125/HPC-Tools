@@ -3,7 +3,7 @@
 #SBATCH -n <TASKS>
 #SBATCH -c 1
 #SBATCH -q regular
-#SBATCH -t 01:00:00
+#SBATCH -t <TIME>
 #SBATCH --constraint=cpu
 #SBATCH --output=output/slurm/job_%j.out
 #SBATCH --error=output/slurm/job_%j.err

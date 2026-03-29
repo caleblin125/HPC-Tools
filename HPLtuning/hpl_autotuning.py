@@ -106,12 +106,11 @@ RAM = 512 #Gigabytes
 PERCENT = 0.9
 MAX_NS = int((PERCENT * RAM * 10e9 / 8) ** 0.5)
 
-
 NUDGE_NUM = 3
 NUDGE_JUMP = 0.05
 
 params = [
-    Param("NS",         [int(i * 0.3) for i in range(int(0.7*MAX_NS), MAX_NS)]), #Testing small first
+    Param("NS",         [int(i * 0.05) for i in range(int(0.7*MAX_NS), MAX_NS)]), #Testing small first
     Param("NB",         [i for i in range(50, 600)]),
     Param("PMAP",       [0, 1]),
     Param("PFACT",      [0, 1, 2]),
@@ -133,6 +132,7 @@ batchParams = [
     Param("HPL_LOCATION", [HPL_LOCATION]),
     Param("ROOT", [ROOT]),
     Param("DESCRIPTION", ["autotuning"]),
+    Param("TIME", ["1:00:00"])
 ]
 
 #Method to generate random parameters
