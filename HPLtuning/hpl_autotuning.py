@@ -155,7 +155,8 @@ def getParam(params:"list[Param]", name):
     for p in params:
         if p.name == name:
             return p
-    raise Exception(f"Param {name} not found in {params}")
+    # raise Exception(f"Param {name} not found in {params}")
+    return None
 
 def writeFile(filename, params:"list[Param]", lines:"list[str]"):
     newLines = []
@@ -255,14 +256,16 @@ def generateRand(index:int, params:"list[Param]" = params, nudgeP=False):
     p = getParam(newP, "P")
     q = getParam(newP, "Q")
     
-    q.rand = TOTAL_TASKS // p.rand
+    if (p is not None) and (q is not None):
+        q.rand = TOTAL_TASKS // p.rand
     
     print("New Parameters:", newP)
     writeFile(os.path.join(ROOT, file), newP, sampleLines)
     writeFile(os.path.join(os.path.dirname(HPL_LOCATION), "HPL.dat"), newP, sampleLines)
     
     description = getParam(batchParams, "DESCRIPTION")
-    description.rand = f"Autotuning test {index} {'modified' if nudgeP else 'random'}"
+    if description is not None:
+        description.rand = f"Autotuning test {index} {'modified' if nudgeP else 'random'}"
     writeFile(os.path.join(ROOT, "hpl.job"), batchParams, batchLines)
     
     #Run batch script
@@ -358,8 +361,10 @@ def plot():
     
     with open("hpl_config_results.json", "r", encoding="utf-8") as f:
         data = json.load(f)
+        
+    print("highest gflops:", max([d["GFlops"] for d in data if "GFlops" in d], key = lambda x : 0 if x is None else x))
 
-    def plot2Var(x, y, file, succeeded=True, scaleAxi=False):
+    def plot2Var(x, y, file, succeeded=True):
         plt.cla()
         dataX = []
         dataY = []
@@ -367,17 +372,24 @@ def plot():
         badDataY = []
         for d in data:
             if (not succeeded) or d["Possible"]:
-                if (x in d) and (y in d):
+                if (x in d) and (y in d) and d[y] is not None:
                     dataX.append(d[x])
                     dataY.append(d[y])
             else:
-                if (x in d) and (y in d):
+                if (x in d) and (y in d) and d[y] is not None:
                     badDataX.append(d[x])
                     badDataY.append(d[y])
-        plt.scatter(badDataX, badDataY, c= "red")
-        plt.scatter(dataX, dataY, c= "green")
+        
+        plt.scatter(badDataX, badDataY, c="red")
+        plt.scatter(dataX, dataY, c="green")
         plt.xlabel(x)
         plt.ylabel(y)
+        
+        # Auto-scale based on actual finite data
+        all_y = [v for v in dataY + badDataY if v is not None]
+        if all_y:
+            plt.ylim(0, max(all_y) * 1.1)  # 10% headroom above max
+        
         plt.savefig(file, dpi=300)
         
     os.makedirs("plots", exist_ok = True)
