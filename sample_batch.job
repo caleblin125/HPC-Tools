@@ -9,10 +9,11 @@ FILENAME="SAMPLE_RUN"
 DESCRIPTION="$FILENAME with some parameters"
 
 ROOT=$(pwd)
+OUTPUT=$ROOT/output
 
-echo "$SLURM_JOB_ID : $DESCRIPTION" >> output/descriptions.txt
+echo "$SLURM_JOB_ID : $DESCRIPTION" >> $OUTPUT/descriptions.txt
 
-OUTDIR=$ROOT/output/$FILENAME
+OUTDIR=$OUTDIR/$FILENAME
 mkdir -p $OUTDIR
 
 
