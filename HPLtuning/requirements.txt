@@ -3,3 +3,4 @@ statsmodels
 pandas
 matplotlib
 argparse
+packaging

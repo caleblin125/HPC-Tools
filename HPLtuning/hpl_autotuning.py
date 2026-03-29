@@ -16,7 +16,8 @@ from pathlib import Path
 script_location = Path(__file__).resolve().parent
 
 sample = os.path.join(script_location, "HPL.dat")
-sampleName, sampleExtension = sample.split(".")
+sampleName = "HPL"
+sampleExtension = "dat"
 
 with open(sample, "r") as file:
     sampleLines = file.readlines()
@@ -94,14 +95,17 @@ class Param():
 
 ROOT = os.getcwd()
 HPL_LOCATION = "/global/common/software/m4007/opt/hpl-2.3/bin/xhpl"
+print(ROOT)
+
+
+NODES = 1
+CORES_PER_NODE = 128
+TOTAL_TASKS = NODES * CORES_PER_NODE
 
 RAM = 512 #Gigabytes
 PERCENT = 0.9
 MAX_NS = int((PERCENT * RAM * 10e9 / 8) ** 0.5)
 
-NODES = 2
-CORES_PER_NODE = 128
-TOTAL_TASKS = NODES * CORES_PER_NODE
 
 NUDGE_NUM = 3
 NUDGE_JUMP = 0.05
@@ -112,6 +116,7 @@ params = [
     Param("PMAP",       [0, 1]),
     Param("PFACT",      [0, 1, 2]),
     Param("NBMIN",      [i for i in range(1, 8)]),
+    Param("NDIV",       [i for i in range(1, 5)]),
     Param("RFACT",      [0, 1, 2]),
     Param("BCAST",      [0, 1, 2, 3, 4, 5]),
     Param("DEPTH",      [i for i in range(6)]),
@@ -152,9 +157,9 @@ def getParam(params:"list[Param]", name):
             return p
     raise Exception(f"Param {name} not found in {params}")
 
-def writeFile(filename, params:"list[Param]"):
+def writeFile(filename, params:"list[Param]", lines:"list[str]"):
     newLines = []
-    for line in sampleLines:
+    for line in lines:
         newLine = line
         for p in params:
             newLine = p.replace(newLine)
@@ -252,38 +257,85 @@ def generateRand(index:int, params:"list[Param]" = params, nudgeP=False):
     q.rand = TOTAL_TASKS // p.rand
     
     print("New Parameters:", newP)
-    writeFile(file, newP)
+    print(os.path.join(ROOT, file))
+    writeFile(os.path.join(ROOT, file), newP, sampleLines)
+    writeFile(os.path.join(os.path.dirname(HPL_LOCATION), "HPL.dat"), newP, sampleLines)
     
     description = getParam(batchParams, "DESCRIPTION")
     description.rand = f"Autotuning test {index} {'modified' if nudgeP else 'random'}"
-    writeFile("hpl.job", batchParams)
+    writeFile(os.path.join(ROOT, "hpl.job"), batchParams, batchLines)
     
-    raise Exception
-    #Run python emulation
-    python_result = subprocess.run(
+    #Run batch script
+    batch_result = subprocess.run(
         ["sbatch", "hpl.job"],
         env={**os.environ},
-        capture_output=True,
-        text=True
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True
     )
-    text_output = python_result.stdout
+    # batch_result = subprocess.run(["sbatch", "hpl.job"], capture_output=True, text=True)
     
-    print("succeed", succeeded,"; GFlops: ", singlecore)
+    text_output = batch_result.stdout
+    match = re.match(r"Submitted batch job (\d+)", text_output)
+    
+    if match:
+        job_id = match.group(1)
+        
+        #Wait till job finishes
+        while True:
+            time.sleep(10.0)
+            watch_result = subprocess.run(
+                ["scontrol", "show", "job", str(job_id)],
+                env={**os.environ},
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            output = watch_result.stdout + watch_result.stderr
 
-    os.makedirs("gen_configs", exist_ok = True)
-    os.system(f"mv {file} gen_configs")
+            # Extract job state
+            match = re.search(r"JobState=(\w+)", output)
+            if not match:
+                raise RuntimeError(f"Could not determine job state:\n{output}")
+
+            state = match.group(1)
+
+            if state == "COMPLETED":
+                succeeded = True
+                break
+            elif state in {"FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL"}:
+                succeeded = False
+                GFlops = None
+                break
+        
+        if succeeded:
+            res = parseHPL(f"output/HPL_RUN/hpl_{job_id}.out")
+            if len(res) == 0:
+                succeeded = False
+                GFlops = None
+            else:
+                succeeded = True
+                GFlops = res[0]["GFlops"]
+    else:
+        succeeded = False
+        GFlops = None
+        job_id = None
+    
+    print("succeed", succeeded,"; GFlops: ", GFlops)
+
+    os.system(f"mv {file} hpl_gen_configs")
 
     entry = {
         "Filename" : file,
-        "Singlecore Tokens" : float(singlecore),
-        "Multicore Tokens" : float(multicore),
+        "GFlops" : GFlops,
+        "Job Id" : job_id,
         "Possible" : succeeded
     }
     for p in newP:
         entry[p.name] = p.rand
 
     # Write file
-    write = "config_results.json"
+    write = "hpl_config_results.json"
     if os.path.exists(write):
         with open(write, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -299,7 +351,10 @@ def generateRand(index:int, params:"list[Param]" = params, nudgeP=False):
     return entry
 
 def plot():
-    with open("config_results.json", "r", encoding="utf-8") as f:
+    if "hpl_config_results.json" not in os.listdir():
+        return
+    
+    with open("hpl_config_results.json", "r", encoding="utf-8") as f:
         data = json.load(f)
 
     def plot2Var(x, y, file, succeeded=True, scaleAxi=False):
@@ -353,7 +408,8 @@ batches = 10
 top = 7
 initRand = True
 if __name__ == "__main__":
-    tested = os.listdir("gen_configs")
+    os.makedirs("hpl_gen_configs", exist_ok = True)
+    tested = os.listdir("hpl_gen_configs")
     
     #Find current index
     index = 0
@@ -363,8 +419,8 @@ if __name__ == "__main__":
             if int(match.group(1)) > index:
                 index = int(match.group(1)) + 1
 
-    if os.path.exists("config_results.json"):
-        with open("config_results.json", "r", encoding="utf-8") as f:
+    if os.path.exists("hpl_config_results.json"):
+        with open("hpl_config_results.json", "r", encoding="utf-8") as f:
             data:"list[dict]" = json.load(f)
         plot()
     else:
@@ -390,7 +446,5 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             pass
         finally:
-            if "config" in os.listdir():
-                os.chdir("config")
             plot()
         
