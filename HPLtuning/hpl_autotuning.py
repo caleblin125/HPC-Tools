@@ -95,7 +95,7 @@ class Param():
 
 ROOT = os.getcwd()
 HPL_LOCATION = "/global/common/software/m4007/opt/hpl-2.3/bin/xhpl"
-print(ROOT)
+print("ROOT", ROOT)
 
 
 NODES = 1
@@ -116,7 +116,7 @@ params = [
     Param("PMAP",       [0, 1]),
     Param("PFACT",      [0, 1, 2]),
     Param("NBMIN",      [i for i in range(1, 8)]),
-    Param("NDIV",       [i for i in range(1, 5)]),
+    Param("NDIV",       [i for i in range(2, 6)]),
     Param("RFACT",      [0, 1, 2]),
     Param("BCAST",      [0, 1, 2, 3, 4, 5]),
     Param("DEPTH",      [i for i in range(6)]),
@@ -244,6 +244,7 @@ def parseHPL(filename):
 
 def generateRand(index:int, params:"list[Param]" = params, nudgeP=False):
     file = f"{sampleName}_{index}.{sampleExtension}"
+    print(f"Run {index}", file)
 
     if nudgeP:
         newP = nudge(params, NUDGE_NUM, NUDGE_JUMP)
@@ -257,7 +258,6 @@ def generateRand(index:int, params:"list[Param]" = params, nudgeP=False):
     q.rand = TOTAL_TASKS // p.rand
     
     print("New Parameters:", newP)
-    print(os.path.join(ROOT, file))
     writeFile(os.path.join(ROOT, file), newP, sampleLines)
     writeFile(os.path.join(os.path.dirname(HPL_LOCATION), "HPL.dat"), newP, sampleLines)
     
@@ -317,9 +317,11 @@ def generateRand(index:int, params:"list[Param]" = params, nudgeP=False):
                 succeeded = True
                 GFlops = res[0]["GFlops"]
     else:
+        print(batch_result.stdout, batch_result.stderr)
         succeeded = False
         GFlops = None
         job_id = None
+        raise Exception("Batch job failed")
     
     print("succeed", succeeded,"; GFlops: ", GFlops)
 
@@ -377,7 +379,8 @@ def plot():
         plt.xlabel(x)
         plt.ylabel(y)
         plt.savefig(file, dpi=300)
-
+        
+    os.makedirs("plots", exist_ok = True)
     plot2Var("NS", "GFlops", "plots/NS.png")
     plot2Var("NB", "GFlops", "plots/NB.png")
     plot2Var("BCAST", "GFlops", "plots/BCAST.png")
@@ -414,7 +417,7 @@ if __name__ == "__main__":
     #Find current index
     index = 0
     for t in tested:
-        match=re.match(f"{sampleName}(.*).{sampleExtension}", t)
+        match=re.match(f"{sampleName}_(.*).{sampleExtension}", t)
         if match:
             if int(match.group(1)) > index:
                 index = int(match.group(1)) + 1
@@ -427,24 +430,19 @@ if __name__ == "__main__":
         data = []
 
     for e in range(epochs):
-        try:
-            if (e == 0) and initRand: #first gen is random
-                for i in range(index, index + batches):
-                    data.append(generateRand(i))
-            else:
-                data.sort(key = heuristic, reverse=True)
-                for i in range(index, index + top):
-                    for k, v in data[i - index].items():
-                        p = getParam(params, k)
-                        if p is not None:
-                            p.rand = v
-                    data.append(generateRand(i, params, True))
-                for i in range(index + top, index + batches):
-                    data.append(generateRand(i))
-            index = index + batches
-            
-        except KeyboardInterrupt:
-            pass
-        finally:
-            plot()
+        if (e == 0) and initRand: #first gen is random
+            for i in range(index, index + batches):
+                data.append(generateRand(i))
+        else:
+            data.sort(key = heuristic, reverse=True)
+            for i in range(index, index + top):
+                for k, v in data[i - index].items():
+                    p = getParam(params, k)
+                    if p is not None:
+                        p.rand = v
+                data.append(generateRand(i, params, True))
+            for i in range(index + top, index + batches):
+                data.append(generateRand(i))
+        index = index + batches
+        
         
