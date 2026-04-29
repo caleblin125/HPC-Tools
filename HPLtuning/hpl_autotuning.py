@@ -11,6 +11,7 @@ import numpy as np
 import statsmodels.api as sm
 import pandas as pd
 import argparse
+import threading
 from pathlib import Path
 
 script_location = Path(__file__).resolve().parent
@@ -98,19 +99,20 @@ HPL_LOCATION = "/global/common/software/m4007/opt/hpl-2.3/bin/xhpl"
 print("ROOT", ROOT)
 
 
-NODES = 1
+NODES = 2
 CORES_PER_NODE = 128
 TOTAL_TASKS = NODES * CORES_PER_NODE
 
 RAM = 512 #Gigabytes
 PERCENT = 0.9
-MAX_NS = int((PERCENT * RAM * 10e9 / 8) ** 0.5)
+MAX_NS = int((PERCENT * RAM * 1e9 / 8) ** 0.5)
+print(MAX_NS)
 
 NUDGE_NUM = 3
-NUDGE_JUMP = 0.05
+NUDGE_JUMP = 0.02
 
 params = [
-    Param("NS",         [int(i * 0.05) for i in range(int(0.7*MAX_NS), MAX_NS)]), #Testing small first
+    Param("NS",         [int(i) for i in range(int(0.7*MAX_NS), MAX_NS)]), #Testing small first
     Param("NB",         [i for i in range(50, 600)]),
     Param("PMAP",       [0, 1]),
     Param("PFACT",      [0, 1, 2]),
@@ -132,7 +134,7 @@ batchParams = [
     Param("HPL_LOCATION", [HPL_LOCATION]),
     Param("ROOT", [ROOT]),
     Param("DESCRIPTION", ["autotuning"]),
-    Param("TIME", ["1:00:00"])
+    Param("TIME", ["10:00:00"])
 ]
 
 #Method to generate random parameters
@@ -418,7 +420,7 @@ def plot():
     except:
         pass
     
-epochs = 3
+epochs = 10
 batches = 10
 top = 7
 initRand = True
