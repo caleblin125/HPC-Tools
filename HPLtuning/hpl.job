@@ -2,13 +2,15 @@
 #SBATCH -N <NODES>
 #SBATCH -n <TASKS>
 #SBATCH -c 1
-#SBATCH -q regular
 #SBATCH -t <TIME>
-#SBATCH --constraint=cpu
 #SBATCH --output=output/slurm/job_%j.out
 #SBATCH --error=output/slurm/job_%j.err
+#SBATCH --chdir=/home/caleb/
 
-#This configuration is for perlmutter
+source .bashrc
+
+add_build $INSTALL_DIR/OpenBLAS OpenBLAS
+add_build $INSTALL_DIR/OpenMPI OpenMPI
 
 HPL="<HPL_LOCATION>"
 ROOT="<ROOT>"
@@ -22,8 +24,26 @@ echo "$SLURM_JOB_ID : $DESCRIPTION" >> $OUTPUT/descriptions.txt
 OUTDIR=$OUTPUT/$FILENAME
 mkdir -p $OUTDIR
 
+export OMPI_MCA_mca_verbose=0
+export ROC_ENABLE_PRE_VEGA=0
+# or just
+export HSA_ENABLE_SDMA=0
+
+export OMPI_MCA_btl_tcp_if_include=enp1s0 
+export OMPI_MCA_btl=self,vader,tcp
+
+pkill -f mpirun
+pkill -f orted
+
+mkdir -p output/dats
+cp -f HPL_<INDEX>.dat $(dirname $HPL)/HPL.dat
+cp -f HPL_<INDEX>.dat output/dats/HPL-$SLURM_JOB_ID.dat
+
 cd $(dirname $HPL)
-srun xhpl | tee $OUTDIR/hpl_$SLURM_JOB_ID.out
+mpirun -np <TASKS> \
+    --map-by ppr:12:node \
+    --bind-to none \
+    xhpl | tee $OUTDIR/hpl_$SLURM_JOB_ID.out
 
 
 

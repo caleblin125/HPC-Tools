@@ -94,23 +94,22 @@ class Param():
         return str(self)
 
 ROOT = os.getcwd()
-HPL_LOCATION = "/global/common/software/m4007/opt/hpl-2.3/bin/xhpl"
+HPL_LOCATION = "/haydean/caleb/opt/HPL/bin/xhpl"
 print("ROOT", ROOT)
 
-
-NODES = 1
-CORES_PER_NODE = 128
+NODES = 4
+CORES_PER_NODE = 6
 TOTAL_TASKS = NODES * CORES_PER_NODE
 
-RAM = 512 #Gigabytes
-PERCENT = 0.9
-MAX_NS = int((PERCENT * RAM * 10e9 / 8) ** 0.5)
+RAM = 16 #Gigabytes
+PERCENT = 0.6
+MAX_NS = int((PERCENT * RAM * 1e9 / 8) ** 0.5)
 
 NUDGE_NUM = 3
 NUDGE_JUMP = 0.05
 
 params = [
-    Param("NS",         [int(i * 0.05) for i in range(int(0.7*MAX_NS), MAX_NS)]), #Testing small first
+    Param("NS",         [int(i) for i in range(int(0.7*MAX_NS), MAX_NS)]), #Testing small first
     Param("NB",         [i for i in range(50, 600)]),
     Param("PMAP",       [0, 1]),
     Param("PFACT",      [0, 1, 2]),
@@ -132,7 +131,8 @@ batchParams = [
     Param("HPL_LOCATION", [HPL_LOCATION]),
     Param("ROOT", [ROOT]),
     Param("DESCRIPTION", ["autotuning"]),
-    Param("TIME", ["1:00:00"])
+    Param("TIME", ["1:00:00"]),
+    Param("INDEX", ["0"])
 ]
 
 #Method to generate random parameters
@@ -261,11 +261,14 @@ def generateRand(index:int, params:"list[Param]" = params, nudgeP=False):
     
     print("New Parameters:", newP)
     writeFile(os.path.join(ROOT, file), newP, sampleLines)
-    writeFile(os.path.join(os.path.dirname(HPL_LOCATION), "HPL.dat"), newP, sampleLines)
+    #writeFile(os.path.join(os.path.dirname(HPL_LOCATION), "HPL.dat"), newP, sampleLines)
     
     description = getParam(batchParams, "DESCRIPTION")
     if description is not None:
         description.rand = f"Autotuning test {index} {'modified' if nudgeP else 'random'}"
+    index_p = getParam(batchParams, "INDEX")
+    if description is not None:
+        index_p.rand = str(index)
     writeFile(os.path.join(ROOT, "hpl.job"), batchParams, batchLines)
     
     #Run batch script
@@ -286,7 +289,7 @@ def generateRand(index:int, params:"list[Param]" = params, nudgeP=False):
         
         #Wait till job finishes
         while True:
-            time.sleep(10.0)
+            time.sleep(1.0)
             watch_result = subprocess.run(
                 ["scontrol", "show", "job", str(job_id)],
                 env={**os.environ},
@@ -393,9 +396,8 @@ def plot():
         plt.savefig(file, dpi=300)
         
     os.makedirs("plots", exist_ok = True)
-    plot2Var("NS", "GFlops", "plots/NS.png")
-    plot2Var("NB", "GFlops", "plots/NB.png")
-    plot2Var("BCAST", "GFlops", "plots/BCAST.png")
+    for p in params:
+        plot2Var(p.name, "GFlops", f"plots/{p.name}.png")
 
     # Linear Regression
     try: 
@@ -418,7 +420,7 @@ def plot():
     except:
         pass
     
-epochs = 3
+epochs = 1000
 batches = 10
 top = 7
 initRand = True
@@ -427,12 +429,13 @@ if __name__ == "__main__":
     tested = os.listdir("hpl_gen_configs")
     
     #Find current index
-    index = 0
+    index = -1
     for t in tested:
         match=re.match(f"{sampleName}_(.*).{sampleExtension}", t)
         if match:
             if int(match.group(1)) > index:
-                index = int(match.group(1)) + 1
+                index = int(match.group(1))
+    index += 1
 
     if os.path.exists("hpl_config_results.json"):
         with open("hpl_config_results.json", "r", encoding="utf-8") as f:
