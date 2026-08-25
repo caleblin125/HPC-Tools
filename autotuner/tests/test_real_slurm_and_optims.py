@@ -80,3 +80,22 @@ def test_hpl_application_renders_hpl_dat_with_values():
     assert "<<'HPLDAT'" in command
     assert "HPLinpack benchmark input file" in command
     assert str(app.executable) in command
+
+
+def test_hpl_application_parses_real_output_format():
+    # Row format as emitted by the actual xhpl 2.3 run on Perlmutter.
+    sample = (
+        "================================================================================\n"
+        "T/V                N    NB     P     Q               Time                 Gflops\n"
+        "--------------------------------------------------------------------------------\n"
+        "WR11L4L4         256    64     1     1               0.00             2.5378e+00\n"
+        "--------------------------------------------------------------------------------\n"
+        "||Ax-b||_oo/(eps*(||A||_oo*||x||_oo+||b||_oo)*N)=   1.11537336e-02 ...... PASSED\n"
+        "Finished      1 tests with the following results:\n"
+        "              1 tests completed and passed residual checks,\n"
+    )
+    parsed = HPLApplication().parse_result(sample)
+    assert parsed["objective"] == 2.5378
+    assert parsed["metrics"]["gflops"] == 2.5378
+    assert parsed["metrics"]["runtime"] == 0.0
+    assert parsed["success"] is True

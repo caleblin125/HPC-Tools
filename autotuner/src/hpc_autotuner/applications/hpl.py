@@ -39,11 +39,15 @@ class HPLApplication(Application):
         q = int(configuration.get("Q", 1))
         executable = str(self.executable)
 
-        # Stage a per-job HPL.dat in /tmp so evaluations never clobber the
-        # shared installation or one another (HPL reads HPL.dat from CWD).
+        # Stage a per-job HPL.dat on the shared filesystem (under the Slurm
+        # submission directory) because srun cannot always chdir into a node-
+        # local /tmp path ("couldn't chdir to /tmp/...: going to /tmp instead").
+        # HPL reads HPL.dat from its working directory.
         return (
-            'RUNDIR="/tmp/hpl_${USER}_${SLURM_JOB_ID:-local}_${RANDOM}"\n'
+            'RUNDIR="${SLURM_SUBMIT_DIR:-$PWD}/outputs/hpl_runs/${SLURM_JOB_ID:-local}"\n'
             'mkdir -p "$RUNDIR"\n'
+            'echo "HPL run dir: $RUNDIR"\n'
+            'ln -sf "$RUNDIR/HPL.dat" /tmp/HPL.dat\n'
             "cat > \"$RUNDIR/HPL.dat\" <<'HPLDAT'\n"
             "HPLinpack benchmark input file\n"
             "Innovative Computing Laboratory, University of Tennessee\n"
@@ -79,6 +83,7 @@ class HPLApplication(Application):
             "HPLDAT\n"
             'cd "$RUNDIR"\n'
             f"srun {executable}\n"
+            'rm -f /tmp/HPL.dat\n'
             'rm -rf "$RUNDIR"\n'
         )
 

@@ -18,11 +18,12 @@ class SlurmTestApplication(Application):
     def command(self, configuration: dict[str, Any]) -> list[str]:
         scale = configuration.get("scale", 1.0)
         mode = configuration.get("mode", "baseline")
-        # Avoid relying on a `python` interpreter on the compute node; awk is
-        # always present on NERSC login and compute nodes.
+        # Use a non-login shell: `bash -l` sources the NERSC profile, whose
+        # showquota banner crashes on compute nodes (no /usr/lpp/mmfs).
+        # awk is always present, so we do not depend on a python interpreter.
         return [
             "bash",
-            "-lc",
+            "-c",
             (
                 "hostname; "
                 "echo \"SLURM_JOB_ID=$SLURM_JOB_ID\"; "
@@ -48,4 +49,4 @@ class SlurmTestApplication(Application):
         if match:
             success = match.group(1).lower() == "true"
 
-        return {"metrics": metrics, "objective": objective, "success": success}
+        return {"metrics": {"objective": objective}, "objective": objective, "success": success}
