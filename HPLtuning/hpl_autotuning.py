@@ -8,125 +8,86 @@ import time
 import math
 import matplotlib.pyplot as plt
 import numpy as np
-import statsmodels.api as sm
-import pandas as pd
+try:
+    import statsmodels.api as sm
+    import pandas as pd
+except ModuleNotFoundError:
+    # Regression is diagnostic only; the search and plotting paths do not
+    # require these heavier optional packages.
+    sm = None
+    pd = None
 import argparse
 import threading
 from pathlib import Path
+from parameter_search import EliteRandomSearch, Parameter, Param
 
 script_location = Path(__file__).resolve().parent
 
-sample = os.path.join(script_location, "HPL.dat")
-sampleName = "HPL"
+sample = os.environ.get("HPL_TEMPLATE", os.path.join(script_location, "HPL.dat"))
+sampleName = os.environ.get("HPL_BENCHMARK_NAME", "HPL")
 sampleExtension = "dat"
+OUTPUT_SUBDIR = os.environ.get("HPL_OUTPUT_SUBDIR", "HPL_RUN")
+CONFIG_SUBDIR = os.environ.get("HPL_CONFIG_SUBDIR", "hpl_gen_configs")
+RESULTS_FILE = os.environ.get("HPL_RESULTS_FILE", "hpl_config_results.json")
 
 with open(sample, "r") as file:
     sampleLines = file.readlines()
     sampleText = "".join(sampleLines)
     
-batch = os.path.join(script_location, "hpl.job")
+batch = os.environ.get("HPL_JOB_TEMPLATE", os.path.join(script_location, "hpl.job"))
 with open(batch, "r") as file:
     batchLines = file.readlines()
-    batchText = "".join(sampleLines)
-
-class Param():
-    def __init__(self, name:str, values:list):
-        self.name = name
-        self.values = values
-        self.rand = random.choice(values)
-    
-    def generate(self):
-        self.rand = random.choice(self.values)
-
-    def move(self, jump:float) -> bool:
-        """Moves parameter by some jump percentage
-
-        Args:
-            jump (float): jump percent [0.0, 0.5]
-
-        Returns:
-            bool: if the value actually moved
-        """
-        index = self.values.index(self.rand)
-        thresh = int(max(1, jump*len(self.values)))
-        newIndex = index + random.randint(-thresh, thresh)
-        if newIndex < 0:
-            newIndex = 0
-        if newIndex >= len(self.values):
-            newIndex = len(self.values)-1
-        self.rand = self.values[newIndex]
-        return newIndex != index
-
-    def zero(self):
-        self.rand = self.values[0]
-        
-    def next(self, jump:float=0.0, overflow=True) -> bool:
-        """
-        Moves this parameter forward in value list by jump percentage (minimum 1)
-
-        Args:
-            jump (float, optional): jump percent [0.0, 1.0]. Defaults to 0.0.
-            overflow (bool, optional): allow wrapping when at the end of values. Defaults to True.
-
-        Returns:
-            bool: _description_
-        """
-        jumpMax = int(max(jump * len(self.values), 1))
-        nextIndex = self.values.index(self.rand) + random.randint(1, jumpMax)
-        if overflow:
-            self.rand = self.values[nextIndex % len(self.values)]
-        else:
-            self.rand = self.values[min(nextIndex, len(self.values) - 1)]
-        return len(self.values) <= nextIndex
-
-    def replace(self, fileText:str):
-        fileText = re.sub(f"<{self.name}>", f"{self.rand}", fileText)
-        return fileText
-    
-    def copy(self):
-        clone = Param(self.name, self.values)
-        clone.rand = self.rand
-        return clone
-
-    def __str__(self) -> str:
-        return f"{self.name}: {self.rand}"
-    
-    def __repr__(self) -> str:
-        return str(self)
+    batchText = "".join(batchLines)
 
 ROOT = os.getcwd()
-HPL_LOCATION = "/global/common/software/m4007/opt/hpl-2.3/bin/xhpl"
+HPL_LOCATION = os.environ.get("HPL_EXECUTABLE", "/haydean/caleb/opt/HPL/bin/xhpl")
 print("ROOT", ROOT)
 
-
-NODES = 2
-CORES_PER_NODE = 128
+NODES = 4
+CORES_PER_NODE = 6
 TOTAL_TASKS = NODES * CORES_PER_NODE
 
-RAM = 512 #Gigabytes
-PERCENT = 0.9
-MAX_NS = int((PERCENT * RAM * 1e9 / 8) ** 0.5)
-print(MAX_NS)
+RAM = 16 #Gigabytes
+PERCENT = 0.98
+MAX_NS = int((NODES * PERCENT * RAM * 1e9 / 8) ** 0.5)
 
 NUDGE_NUM = 3
 NUDGE_JUMP = 0.02
 
 params = [
     Param("NS",         [int(i) for i in range(int(0.7*MAX_NS), MAX_NS)]), #Testing small first
-    Param("NB",         [i for i in range(50, 600)]),
-    Param("PMAP",       [0, 1]),
+    Param("NB",         [i for i in range(150, 400)]),
+    # Param("PMAP",       [0, 1]),
+    Param("PMAP",       [0]),
     Param("PFACT",      [0, 1, 2]),
     Param("NBMIN",      [i for i in range(1, 8)]),
     Param("NDIV",       [i for i in range(2, 6)]),
     Param("RFACT",      [0, 1, 2]),
-    Param("BCAST",      [0, 1, 2, 3, 4, 5]),
-    Param("DEPTH",      [i for i in range(6)]),
+    # Param("BCAST",      [0, 1, 2, 3, 4, 5]),
+    Param("BCAST",      [0, 1, 2]),
+    Param("DEPTH",      [i for i in range(1, 7)]),
     Param("SWAP",       [0, 1, 2]),
     Param("L1",         [0, 1]),
     Param("U",          [0, 1]),
-    Param("P",          [i for i in range(1, TOTAL_TASKS+1) if (TOTAL_TASKS % i == 0)]),
-    Param("Q",          [i for i in range(1, TOTAL_TASKS+1) if (TOTAL_TASKS % i == 0)])
+    # Param("P",          [i for i in range(1, TOTAL_TASKS+1) if (TOTAL_TASKS % i == 0)]),
+    # Param("Q",          [i for i in range(1, TOTAL_TASKS+1) if (TOTAL_TASKS % i == 0)])
+    Param("P",          [4]),
+    Param("Q",          [6])
 ]
+
+# Intel's distributed HPL-AI binary applies optimized internal values for
+# NB, PFACT, RFACT, BCAST, DEPTH, SWAP, L1, U, and EQUIL.  Do not report a
+# fake search over knobs the executable ignores; retain only fields observed
+# in its output to affect the run.
+if os.environ.get("HPL_AI_MODE") == "1":
+    params = [
+        Param("NS", [int(i) for i in range(int(0.7 * MAX_NS), MAX_NS)]),
+        Param("PMAP", [0, 1]),
+        Param("NBMIN", [i for i in range(1, 8)]),
+        Param("NDIV", [i for i in range(2, 6)]),
+        Param("P", [4]),
+        Param("Q", [6]),
+    ]
 
 batchParams = [
     Param("NODES", [NODES]),
@@ -134,24 +95,10 @@ batchParams = [
     Param("HPL_LOCATION", [HPL_LOCATION]),
     Param("ROOT", [ROOT]),
     Param("DESCRIPTION", ["autotuning"]),
-    Param("TIME", ["10:00:00"])
+    Param("TIME", ["1:00:00"]),
+    Param("CONFIG_ID", ["0"]),
+    Param("CONFIG_PATH", [""])
 ]
-
-#Method to generate random parameters
-def genRandom(params = params):
-    copy = [p.copy() for p in params]
-    for p in copy:
-        p.generate()
-    return copy
-
-#Method to shift parameters by a random amount
-def nudge(params:"list[Param]", values:int, jump:float):
-    copy = [p.copy() for p in params]
-    while values > 0:
-        p = random.choice(copy)
-        if p.move(jump):
-            values -= 1
-    return copy
 
 def getParam(params:"list[Param]", name):
     for p in params:
@@ -180,17 +127,23 @@ def heuristic(entry):
         return 0
 
 def parseHPL(filename):
-    file = open(filename, "r")
+    with open(filename, "r") as file:
+        text = file.read()
+    # A completed Slurm job is not a valid benchmark without HPL's residual
+    # check passing.
+    if not re.search(r"\.\.\.\.\.\. PASSED", text):
+        return []
+    lines = iter(text.splitlines(keepends=True))
 
-    nextline = file.readline()
+    nextline = next(lines, "")
     while not re.match(r"The following parameter values will be used", nextline):
-        nextline = file.readline()
+        nextline = next(lines, "")
         if nextline == "":
             return []
 
     values = {}
     while not re.match(r"-+", nextline):
-        nextline = file.readline()
+        nextline = next(lines, "")
         if nextline == "":
             return []
         match = re.match(r"(.*):(.*)", nextline)
@@ -208,20 +161,18 @@ def parseHPL(filename):
     index = 0
     runs = []
     while nextline != "":
-        nextline = file.readline()
+        nextline = next(lines, "")
         match = re.match(r"T\/V +N +NB +P +Q +Time +Gflops", nextline)
         if match == None:
             continue
-        file.readline()
-        nextline = file.readline()
+        next(lines, "")
+        nextline = next(lines, "")
         vals = [v.strip() for v in nextline.split(" ")]
         vals = [v for v in vals if v != ""]
         entry = {name : dType(val) for name, val, dType in zip(names, vals, dataTypes)}
         entry["index"] = index
         index += 1
         runs.append(entry)
-
-    file.close()
 
     if len(runs) == 0:
         return []
@@ -245,14 +196,61 @@ def parseHPL(filename):
     
     return runs
 
-def generateRand(index:int, params:"list[Param]" = params, nudgeP=False):
-    file = f"{sampleName}_{index}.{sampleExtension}"
+def run_output_path(config_id, job_id):
+    return os.path.join(ROOT, "output", OUTPUT_SUBDIR, f"hpl_config_{config_id}_job_{job_id}.out")
+
+def submit_config(config_id, config_path, description):
+    getParam(batchParams, "DESCRIPTION").rand = description
+    getParam(batchParams, "CONFIG_ID").rand = str(config_id)
+    getParam(batchParams, "CONFIG_PATH").rand = str(Path(config_path).resolve())
+    # Keep each generated Slurm script beside its HPL configuration instead of
+    # cluttering the workspace root.  sbatch reads the script at submission,
+    # so this location is also safe to retain as run provenance.
+    os.makedirs(os.path.join(ROOT, CONFIG_SUBDIR), exist_ok=True)
+    batch_file = os.path.join(ROOT, CONFIG_SUBDIR, f"hpl_config_{config_id}.job")
+    writeFile(batch_file, batchParams, batchLines)
+    batch_result = subprocess.run(["sbatch", batch_file], capture_output=True, text=True, check=False)
+    match = re.search(r"Submitted batch job (\d+)", batch_result.stdout)
+    if not match:
+        raise RuntimeError(f"Batch submission failed:\n{batch_result.stdout}{batch_result.stderr}")
+    return match.group(1)
+
+def wait_for_result(config_id, job_id):
+    while True:
+        time.sleep(1.0)
+        watch_result = subprocess.run(["scontrol", "show", "job", str(job_id)], capture_output=True, text=True, check=False)
+        output = watch_result.stdout + watch_result.stderr
+        match = re.search(r"JobState=(\w+)", output)
+        if not match:
+            raise RuntimeError(f"Could not determine job state:\n{output}")
+        state = match.group(1)
+        if state == "COMPLETED":
+            break
+        if state in {"FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL"}:
+            return False, None, state
+    output_path = run_output_path(config_id, job_id)
+    results = parseHPL(output_path) if os.path.exists(output_path) else []
+    return bool(results), (results[0]["GFlops"] if results else None), state
+
+search = EliteRandomSearch(
+    [Parameter(parameter.name, parameter.values) for parameter in params],
+    elite_count=7,
+    mutation_count=NUDGE_NUM,
+    mutation_fraction=NUDGE_JUMP,
+)
+
+def hpl_params(values):
+    """Translate a generic candidate dictionary into HPL template values."""
+    candidate = [parameter.copy() for parameter in params]
+    for parameter in candidate:
+        parameter.rand = values[parameter.name]
+    return candidate
+
+def generateRand(index:int, values:dict, origin:str):
+    file = f"{sampleName}_config_{index}.{sampleExtension}"
     print(f"Run {index}", file)
 
-    if nudgeP:
-        newP = nudge(params, NUDGE_NUM, NUDGE_JUMP)
-    else:
-        newP = genRandom(params)
+    newP = hpl_params(values)
         
     #Adjust P and Q to match count
     p = getParam(newP, "P")
@@ -262,87 +260,30 @@ def generateRand(index:int, params:"list[Param]" = params, nudgeP=False):
         q.rand = TOTAL_TASKS // p.rand
     
     print("New Parameters:", newP)
-    writeFile(os.path.join(ROOT, file), newP, sampleLines)
-    writeFile(os.path.join(os.path.dirname(HPL_LOCATION), "HPL.dat"), newP, sampleLines)
+    os.makedirs(os.path.join(ROOT, CONFIG_SUBDIR), exist_ok=True)
+    config_path = os.path.join(ROOT, CONFIG_SUBDIR, file)
+    writeFile(config_path, newP, sampleLines)
+    #writeFile(os.path.join(os.path.dirname(HPL_LOCATION), "HPL.dat"), newP, sampleLines)
     
-    description = getParam(batchParams, "DESCRIPTION")
-    if description is not None:
-        description.rand = f"Autotuning test {index} {'modified' if nudgeP else 'random'}"
-    writeFile(os.path.join(ROOT, "hpl.job"), batchParams, batchLines)
-    
-    #Run batch script
-    batch_result = subprocess.run(
-        ["sbatch", "hpl.job"],
-        env={**os.environ},
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True
-    )
-    # batch_result = subprocess.run(["sbatch", "hpl.job"], capture_output=True, text=True)
-    
-    text_output = batch_result.stdout
-    match = re.match(r"Submitted batch job (\d+)", text_output)
-    
-    if match:
-        job_id = match.group(1)
-        
-        #Wait till job finishes
-        while True:
-            time.sleep(10.0)
-            watch_result = subprocess.run(
-                ["scontrol", "show", "job", str(job_id)],
-                env={**os.environ},
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
-            )
-            output = watch_result.stdout + watch_result.stderr
-
-            # Extract job state
-            match = re.search(r"JobState=(\w+)", output)
-            if not match:
-                raise RuntimeError(f"Could not determine job state:\n{output}")
-
-            state = match.group(1)
-
-            if state == "COMPLETED":
-                succeeded = True
-                break
-            elif state in {"FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL"}:
-                succeeded = False
-                GFlops = None
-                break
-        
-        if succeeded:
-            res = parseHPL(f"output/HPL_RUN/hpl_{job_id}.out")
-            if len(res) == 0:
-                succeeded = False
-                GFlops = None
-            else:
-                succeeded = True
-                GFlops = res[0]["GFlops"]
-    else:
-        print(batch_result.stdout, batch_result.stderr)
-        succeeded = False
-        GFlops = None
-        job_id = None
-        raise Exception("Batch job failed")
+    job_id = submit_config(index, config_path, f"autotuning {origin}")
+    succeeded, GFlops, state = wait_for_result(index, job_id)
     
     print("succeed", succeeded,"; GFlops: ", GFlops)
 
-    os.system(f"mv {file} hpl_gen_configs")
-
     entry = {
-        "Filename" : file,
+        "Config Id" : index,
+        "Config File" : os.path.relpath(config_path, ROOT),
+        "Output File" : os.path.relpath(run_output_path(index, job_id), ROOT),
         "GFlops" : GFlops,
-        "Job Id" : job_id,
+        "Job Id" : int(job_id),
+        "State" : state,
         "Possible" : succeeded
     }
     for p in newP:
         entry[p.name] = p.rand
 
     # Write file
-    write = "hpl_config_results.json"
+    write = RESULTS_FILE
     if os.path.exists(write):
         with open(write, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -358,10 +299,10 @@ def generateRand(index:int, params:"list[Param]" = params, nudgeP=False):
     return entry
 
 def plot():
-    if "hpl_config_results.json" not in os.listdir():
+    if not os.path.exists(RESULTS_FILE):
         return
     
-    with open("hpl_config_results.json", "r", encoding="utf-8") as f:
+    with open(RESULTS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
         
     print("highest gflops:", max([d["GFlops"] for d in data if "GFlops" in d], key = lambda x : 0 if x is None else x))
@@ -395,12 +336,13 @@ def plot():
         plt.savefig(file, dpi=300)
         
     os.makedirs("plots", exist_ok = True)
-    plot2Var("NS", "GFlops", "plots/NS.png")
-    plot2Var("NB", "GFlops", "plots/NB.png")
-    plot2Var("BCAST", "GFlops", "plots/BCAST.png")
+    for p in params:
+        plot2Var(p.name, "GFlops", f"plots/{p.name}.png")
 
     # Linear Regression
-    try: 
+    try:
+        if sm is None or pd is None:
+            return
         variables = [p.name for p in params]
         usable = []
         yVar = "GFlops"
@@ -420,43 +362,62 @@ def plot():
     except:
         pass
     
-epochs = 10
+epochs = 1000
 batches = 10
 top = 7
-initRand = True
+initRand = False
 if __name__ == "__main__":
-    os.makedirs("hpl_gen_configs", exist_ok = True)
-    tested = os.listdir("hpl_gen_configs")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--validate-config", type=int, help="rerun a saved configuration by its stable configuration index")
+    parser.add_argument("--epochs", type=int, default=epochs, help="number of sequential tuning batches")
+    parser.add_argument("--batches", type=int, default=batches, help="candidates per batch")
+    parser.add_argument("--seed-known", action="store_true", help="seed the first batch with mutations of the current known-best HPL point")
+    args = parser.parse_args()
+    os.makedirs(CONFIG_SUBDIR, exist_ok = True)
+
+    if args.validate_config is not None:
+        legacy = Path(ROOT) / CONFIG_SUBDIR / f"{sampleName}_{args.validate_config}.dat"
+        current = Path(ROOT) / CONFIG_SUBDIR / f"{sampleName}_config_{args.validate_config}.dat"
+        config_path = current if current.exists() else legacy
+        if not config_path.exists():
+            raise FileNotFoundError(f"No saved configuration for index {args.validate_config}")
+        job_id = submit_config(args.validate_config, config_path, "validation rerun")
+        succeeded, gflops, state = wait_for_result(args.validate_config, job_id)
+        print(json.dumps({"Config Id": args.validate_config, "Job Id": int(job_id), "State": state,
+                          "Valid": succeeded, "GFlops": gflops,
+                          "Output File": os.path.relpath(run_output_path(args.validate_config, job_id), ROOT)}, indent=2))
+        raise SystemExit(0 if succeeded else 1)
+    tested = os.listdir(CONFIG_SUBDIR)
     
     #Find current index
-    index = 0
+    index = -1
     for t in tested:
-        match=re.match(f"{sampleName}_(.*).{sampleExtension}", t)
+        match=re.match(rf"{sampleName}_(?:config_)?(\d+)\.{sampleExtension}$", t)
         if match:
             if int(match.group(1)) > index:
-                index = int(match.group(1)) + 1
+                index = int(match.group(1))
+    index += 1
 
-    if os.path.exists("hpl_config_results.json"):
-        with open("hpl_config_results.json", "r", encoding="utf-8") as f:
+    if os.path.exists(RESULTS_FILE):
+        with open(RESULTS_FILE, "r", encoding="utf-8") as f:
             data:"list[dict]" = json.load(f)
         plot()
     else:
         data = []
 
-    for e in range(epochs):
-        if (e == 0) and initRand: #first gen is random
-            for i in range(index, index + batches):
-                data.append(generateRand(i))
-        else:
-            data.sort(key = heuristic, reverse=True)
-            for i in range(index, index + top):
-                for k, v in data[i - index].items():
-                    p = getParam(params, k)
-                    if p is not None:
-                        p.rand = v
-                data.append(generateRand(i, params, True))
-            for i in range(index + top, index + batches):
-                data.append(generateRand(i))
-        index = index + batches
+    known_seed = {
+        "NS": 84731, "NB": 250, "PMAP": 0, "PFACT": 2, "NBMIN": 2,
+        "NDIV": 5, "RFACT": 0, "BCAST": 0, "DEPTH": 1, "SWAP": 2,
+        "L1": 0, "U": 1, "P": 4, "Q": 6,
+        "Possible": True, "GFlops": 0.0,
+    }
+    for e in range(args.epochs):
+        proposal_history = data
+        if args.seed_known and not data:
+            proposal_history = [known_seed] * search.elite_count
+        candidates = search.propose(proposal_history, args.batches, score_key="GFlops", valid_key="Possible")
+        for offset, candidate in enumerate(candidates):
+            data.append(generateRand(index + offset, candidate.values, candidate.origin))
+        index = index + args.batches
         
         

@@ -1,2 +1,21 @@
-HPLtuning/output
-HPLtuning/plots
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Outputs and artifacts
+outputs/
+build/
+dist/
+
+# HPLtuning run artifacts
+HPLtuning/output/
+HPLtuning/plots/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
