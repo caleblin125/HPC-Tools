@@ -69,6 +69,8 @@ class Runner:
 #SBATCH -J autotune_{evaluation_id}
 #SBATCH -N 1
 #SBATCH -n 1
+#SBATCH -q shared
+#SBATCH --constraint=cpu
 #SBATCH --output=outputs/slurm/job_%j.out
 #SBATCH --error=outputs/slurm/job_%j.err
 

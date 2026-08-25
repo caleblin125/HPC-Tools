@@ -51,3 +51,32 @@ def test_optional_optimizers_fail_gracefully_when_dependency_missing():
     for cls in missing:
         with pytest.raises(ImportError):
             cls(parameters=[{}])
+
+
+def test_hpl_application_parses_results_table():
+    app = HPLApplication()
+    sample = (
+        "================================================================================\n"
+        "T/V                N    NB     P     Q                 Time                 Gflops\n"
+        "--------------------------------------------------------------------------------\n"
+        "WR00C2R2         256    64     1     1               0.01               1.083e-02\n"
+        "--------------------------------------------------------------------------------\n"
+    )
+    parsed = app.parse_result(sample)
+    assert parsed["objective"] == 1.083e-02
+    assert parsed["success"] is True
+    assert parsed["metrics"]["gflops"] == 1.083e-02
+    assert parsed["metrics"]["runtime"] == 0.01
+
+
+def test_hpl_application_renders_hpl_dat_with_values():
+    app = HPLApplication()
+    command = app.command({"N": 1024, "NB": 128, "P": 2, "Q": 2})
+    assert isinstance(command, str)
+    assert "1024          Ns" in command
+    assert "128         NBs" in command
+    assert "2          Ps" in command
+    assert "2          Qs" in command
+    assert "<<'HPLDAT'" in command
+    assert "HPLinpack benchmark input file" in command
+    assert str(app.executable) in command

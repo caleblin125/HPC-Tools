@@ -18,6 +18,8 @@ class SlurmTestApplication(Application):
     def command(self, configuration: dict[str, Any]) -> list[str]:
         scale = configuration.get("scale", 1.0)
         mode = configuration.get("mode", "baseline")
+        # Avoid relying on a `python` interpreter on the compute node; awk is
+        # always present on NERSC login and compute nodes.
         return [
             "bash",
             "-lc",
@@ -25,13 +27,8 @@ class SlurmTestApplication(Application):
                 "hostname; "
                 "echo \"SLURM_JOB_ID=$SLURM_JOB_ID\"; "
                 f"echo \"CONFIGURATION={{scale={scale}, mode={mode}}}\"; "
-                f"objective=$(python - <<'PY'\n"
-                f"import math\n"
-                f"scale={scale}\n"
-                f"mode='{mode}'\n"
-                f"value = scale * (0.75 if mode == 'fast' else 1.5)\n"
-                f"print(value)\n"
-                "PY\n)\n"
+                f"objective=$(awk -v s={scale} -v m='{mode}' "
+                "'BEGIN { print (m == \"fast\") ? s * 0.75 : s * 1.5 }'); "
                 "echo \"OBJECTIVE=$objective\"; "
                 "echo \"SUCCESS=true\"; "
             ),

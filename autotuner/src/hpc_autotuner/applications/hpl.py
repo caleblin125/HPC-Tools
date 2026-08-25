@@ -32,58 +32,78 @@ class HPLApplication(Application):
                 return candidate
         return self.HPL_ROOT / "xhpl"
 
-    def command(self, configuration: dict[str, Any]) -> list[str]:
+    def command(self, configuration: dict[str, Any]) -> str:
         n = int(configuration.get("N", 256))
-        nb = int(configuration.get("NB", 128))
+        nb = int(configuration.get("NB", 64))
         p = int(configuration.get("P", 1))
         q = int(configuration.get("Q", 1))
         executable = str(self.executable)
-        return [
-            "bash",
-            "-lc",
-            (
-                f"cd {self.HPL_ROOT} && "
-                f"cp -f HPL.dat HPL.dat.bak 2>/dev/null || true && "
-                f"python - <<'PY'\n"
-                f"from pathlib import Path\n"
-                f"path = Path('HPL.dat')\n"
-                f"path.write_text('''HPLinpack benchmark input file\n'\n"
-                f"'Innovative Computing Laboratory, University of Tennessee.\n'\n"
-                f"'\n'\n"
-                f"'  1  1  1  1\n'\n"
-                f"'  1  1  1\n'\n"
-                f"'  1\n'\n"
-                f"'  1\n'\n"
-                f"'  1\n'\n"
-                f"'\n'\n"
-                f"f'{{n}}\n'\n"
-                f"f'{{nb}}\n'\n"
-                f"f'{{p}}\n'\n"
-                f"f'{{q}}\n'\n"
-                f"'\n'\n"
-                f"'\n'\n"
-                f"'\n'\n" 
-                f"'\n'\n"
-                f"'\n'\n"
-                f"'\n'\n"
-                f"'\n'\n"
-                f"''')\n"
-                f"PY\n"
-                f"{executable}"
-            ),
-        ]
+
+        # Stage a per-job HPL.dat in /tmp so evaluations never clobber the
+        # shared installation or one another (HPL reads HPL.dat from CWD).
+        return (
+            'RUNDIR="/tmp/hpl_${USER}_${SLURM_JOB_ID:-local}_${RANDOM}"\n'
+            'mkdir -p "$RUNDIR"\n'
+            "cat > \"$RUNDIR/HPL.dat\" <<'HPLDAT'\n"
+            "HPLinpack benchmark input file\n"
+            "Innovative Computing Laboratory, University of Tennessee\n"
+            "HPL.out      output file name (if any)\n"
+            "6            device out (6=stdout,7=stderr,file)\n"
+            "1            # of problems sizes (N)\n"
+            f"{n}          Ns\n"
+            "1            # of NBs\n"
+            f"{nb}         NBs\n"
+            "0            PMAP process mapping (0=Row-,1=Column-major)\n"
+            "1            # of process grids (P x Q)\n"
+            f"{p}          Ps\n"
+            f"{q}          Qs\n"
+            "16.0         threshold\n"
+            "1            # of panel fact\n"
+            "0            PFACTs (0=left, 1=Crout, 2=Right)\n"
+            "1            # of recursive stopping criterium\n"
+            "4            NBMINs (>= 1)\n"
+            "1            # of panels in recursion\n"
+            "4            NDIVs\n"
+            "1            # of recursive panel fact.\n"
+            "0            RFACTs (0=left, 1=Crout, 2=Right)\n"
+            "1            # of broadcast\n"
+            "1            BCASTs (0=1rg,1=1rM,2=2rg,3=2rM,4=Lng,5=LnM)\n"
+            "1            # of lookahead depth\n"
+            "1            DEPTHs (>=0)\n"
+            "0            SWAP (0=bin-exch,1=long,2=mix)\n"
+            "64           swapping threshold\n"
+            "0            L1 in (0=transposed,1=no-transposed) form\n"
+            "1            U  in (0=transposed,1=no-transposed) form\n"
+            "1            Equilibration (0=no,1=yes)\n"
+            "8            memory alignment in double (> 0)\n"
+            "HPLDAT\n"
+            'cd "$RUNDIR"\n'
+            f"srun {executable}\n"
+            'rm -rf "$RUNDIR"\n'
+        )
 
     def parse_result(self, output: str) -> dict[str, Any]:
         metrics: dict[str, float] = {}
         objective = None
 
-        match = re.search(r"HPLinGFLops\s*[:=]\s*([0-9.]+)", output, flags=re.IGNORECASE)
-        if match:
-            objective = float(match.group(1))
+        # HPL v2.3 prints one results-table row per (N, NB) problem, e.g.:
+        #   WR00C2R2         256    64     1     1               0.01               1.083e-02
+        # Keep the last row (the final measurement).
+        rows = re.findall(
+            r"^(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([0-9.]+)\s+([0-9.eE+-]+)\s*$",
+            output,
+            flags=re.MULTILINE,
+        )
+        if rows:
+            _, _, _, _, _, runtime, gflops = rows[-1]
+            objective = float(gflops)
             metrics["gflops"] = objective
-
-        match = re.search(r"time\s*[:=]\s*([0-9.]+)", output, flags=re.IGNORECASE)
-        if match:
-            metrics["runtime"] = float(match.group(1))
+            metrics["runtime"] = float(runtime)
+        else:
+            # Fallback for HPL variants that emit an explicit tag.
+            match = re.search(r"HPLinGFLops\s*[:=]\s*([0-9.eE+-]+)", output, flags=re.IGNORECASE)
+            if match:
+                objective = float(match.group(1))
+                metrics["gflops"] = objective
 
         return {"metrics": metrics, "objective": objective, "success": objective is not None}

@@ -3,6 +3,9 @@
 #SBATCH -J __JOB_NAME__
 #SBATCH -N __NODES__
 #SBATCH -n __NTASKS__
+# Perlmutter rejects plain submissions; an explicit QoS/constraint is required.
+#SBATCH -q shared
+#SBATCH --constraint=cpu
 #SBATCH --output=outputs/slurm/job_%j.out
 #SBATCH --error=outputs/slurm/job_%j.err
 
