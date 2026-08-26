@@ -25,9 +25,9 @@ application:
     build_dir: my_app
 
 slurm:
-  account: null
-  partition: regular_milan_ss11
-  qos: regular_1
+  account: m4007
+  partition: null
+  qos: shared
   constraint: cpu
   time: "00:10:00"
   exclusive: false

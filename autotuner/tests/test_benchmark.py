@@ -219,7 +219,11 @@ def test_benchmark_config_declares_full_tunable_set():
     assert "N" in names and "NB" in names and "P" in names and "BCAST" in names
     assert "Q" not in names  # derived from P
     assert config.slurm.ntasks == 128
-    assert config.slurm.partition == "regular_milan_ss11"
+    # NERSC convention: the QoS + constraint select the queue; no explicit
+    # partition is needed (and the partition name is machine-version-specific).
+    assert config.slurm.qos == "shared"
+    assert config.slurm.partition is None
+    assert config.slurm.account == "m4007"
 
 
 # ---------------------------------------------------------------------------

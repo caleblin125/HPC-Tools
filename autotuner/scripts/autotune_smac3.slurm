@@ -1,16 +1,16 @@
 #!/bin/bash
 # Parent autotuner job for SMAC3.
 #
-# Machine-specific account/partition/QoS/time/exclusive settings are supplied
-# at submit time by scripts/launch_benchmark.sh (or by hand with sbatch
-# flags); the defaults below are generic and Perlmutter-safe (regular CPU
-# partition).
+# Machine-specific account/QoS/constraint/time settings are supplied at submit
+# time by scripts/launch_benchmark.sh (or by hand with sbatch flags); the
+# defaults below follow the standard NERSC structure (no explicit partition:
+# the QoS + constraint select the queue).
 
+#SBATCH -A m4007
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -J autotune-smac3
-#SBATCH -p regular_milan_ss11
-#SBATCH -q regular_1
+#SBATCH -q shared
 #SBATCH --constraint=cpu
 #SBATCH --output=outputs/slurm/autotune_smac3_%j.out
 #SBATCH --error=outputs/slurm/autotune_smac3_%j.err
