@@ -7,6 +7,14 @@ from hpc_autotuner.core.space import ParameterSpace
 from hpc_autotuner.optimizers.adapter import OptionalOptimizerAdapter
 
 
+def _native(value: Any) -> Any:
+    """Convert numpy scalars (ConfigSpace returns them for categoricals) to
+    plain Python types so configurations survive JSON serialization."""
+    if hasattr(value, "item"):
+        return value.item()
+    return value
+
+
 class SMAC3Optimizer(OptionalOptimizerAdapter):
     """SMAC3 (Bayesian optimization with random forests) adapter.
 
@@ -98,7 +106,7 @@ class SMAC3Optimizer(OptionalOptimizerAdapter):
         if info is None:
             raise RuntimeError("SMAC3 returned no configuration to evaluate.")
         self._pending = info
-        return dict(info.config.get_dictionary())
+        return {key: _native(value) for key, value in dict(info.config).items()}
 
     def observe(self, configuration: dict[str, Any], result: Any) -> None:
         if self._pending is None:

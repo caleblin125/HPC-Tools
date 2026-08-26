@@ -115,6 +115,29 @@ def test_smac3_gp_converges_to_optimum():
     assert abs(best_fraction - OPTIMUM) < 0.10
 
 
+def test_smac3_configs_are_json_serializable():
+    """Categorical choices can come back from ConfigSpace as numpy scalars,
+    which must be converted to plain Python types before JSON serialization."""
+    import json
+
+    pytest.importorskip("smac")
+    from hpc_autotuner.optimizers.smac3 import SMAC3Optimizer
+
+    adapter = SMAC3Optimizer(
+        [
+            Parameter("x", "int", bounds=(0, 10)),
+            Parameter("choice", "categorical", choices=[1, 2, 4, 8]),
+        ],
+        seed=1,
+        direction="maximize",
+        n_trials=10,
+        model="gaussian_process",
+    )
+    config = adapter.suggest()
+    json.dumps(config)  # must not raise "int64 is not JSON serializable"
+    assert config["choice"] in [1, 2, 4, 8]
+
+
 def test_raytune_converges_to_optimum():
     pytest.importorskip("ray.tune.search.optuna")
     pytest.importorskip("optuna")
