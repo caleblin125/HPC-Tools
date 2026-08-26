@@ -263,10 +263,25 @@ def run_experiment(
         start_attempt = max((int(rec["attempt"]) for rec in terminal if rec.get("attempt")), default=0) + 1
         replay = terminal
 
-    # Rebuild optimizer state from history (all adapters learn via observe()).
+    # Rebuild optimizer state from history by replaying the recorded
+    # configurations through the normal suggest()/observe() cycle. All bundled
+    # adapters are deterministic given the recorded seed, so suggest()
+    # reproduces the same configurations and observe() receives the matching
+    # pending suggestion (required by SMAC3, Ray Tune, Hyperopt, DEAP, CMA-ES
+    # and Elite Search). If an optimizer ever diverges from the log, replay
+    # stops after feeding the current suggestion so pending state stays valid.
     for record in replay:
-        if "configuration" in record:
-            optimizer.observe(record["configuration"], record)
+        if "configuration" not in record:
+            continue
+        suggested = optimizer.suggest()
+        optimizer.observe(suggested, record)
+        # The recorded configuration is the *resolved* one (derived/fixed
+        # values included); only the tunable values are compared here.
+        logged = record["configuration"]
+        if any(suggested.get(key) != logged.get(key) for key in suggested):
+            log("[resume] warning: optimizer did not reproduce the logged "
+                "configuration; remaining history will not be replayed.")
+            break
 
     if resume_config is not None:
         log(f"[resume] continuing from attempt {start_attempt} with a re-run of the interrupted evaluation.")
@@ -292,7 +307,15 @@ def run_experiment(
     attempt = start_attempt
     while attempt <= budget:
         if resume_config is not None:
-            tunable = resume_config
+            # Re-suggest the interrupted point instead of force-feeding the
+            # logged configuration: deterministic optimizers reproduce it, and
+            # observe() later needs the pending suggestion to be set.
+            tunable = optimizer.suggest()
+            # resume_config is the *resolved* logged configuration; compare only
+            # the tunable values the optimizer controls.
+            if any(tunable.get(key) != resume_config.get(key) for key in tunable):
+                log("[resume] warning: re-suggested configuration differs from the "
+                    "logged interrupted configuration; using the re-suggested one.")
             resume_config = None
         else:
             tunable = optimizer.suggest()

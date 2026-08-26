@@ -38,6 +38,27 @@ class RecordingOptimizer(Optimizer):
         self.observed.append((dict(configuration), dict(result)))
 
 
+class PendingCheckingOptimizer(Optimizer):
+    """Mimics adapters (SMAC3, Elite Search, ...) that require observe() to
+    follow a suggest() (they track a pending configuration)."""
+
+    def __init__(self) -> None:
+        self._pending: dict | None = None
+        self.suggests = 0
+
+    def suggest(self) -> dict:
+        if self._pending is not None:
+            raise RuntimeError("cannot suggest before observing the previous point")
+        self._pending = {"memory_fraction": 0.80 + 0.02 * self.suggests}
+        self.suggests += 1
+        return dict(self._pending)
+
+    def observe(self, configuration: dict, result: dict) -> None:
+        if self._pending is None:
+            raise RuntimeError("observe() without a pending suggestion")
+        self._pending = None
+
+
 def _make_app() -> HPLApplication:
     return HPLApplication.for_benchmark(
         node_memory_bytes=8 * 1024**3,
@@ -290,3 +311,44 @@ def test_child_script_captures_application_output_into_run_group_log():
     assert "srun /path/to/xhpl" in script
     assert '} >> "$OUTFILE" 2>&1' in script
     assert script.index('{') < script.index("srun /path/to/xhpl") < script.index('} >> "$OUTFILE" 2>&1')
+
+def test_resume_reruns_interrupted_attempt_with_pending_checking_optimizer(tmp_path):
+    """A pending-checking adapter (SMAC3, Elite Search, ...) must survive a
+    resume: the interrupted configuration is re-suggested (not force-fed), so
+    observe() receives the pending suggestion it requires."""
+    output_root, storage = _setup(tmp_path, "resume_pend")
+    app = _make_app()
+    interrupted = {
+        "attempt": 1,
+        "evaluation_id": 1,
+        "optimizer": "pending",
+        "run_group": "resume_pend",
+        "configuration": app.resolve_configuration({"memory_fraction": 0.82}),
+        "slurm_job_id": "9999",
+        "status": "SUBMITTED",
+        "success": False,
+        "objective": None,
+        "metrics": {},
+        "submitted_at": "2026-08-26T00:00:00+00:00",
+    }
+    storage.append_evaluation(interrupted)
+
+    optimizer = PendingCheckingOptimizer()
+    records = run_experiment(
+        optimizer=optimizer,
+        application=app,
+        scheduler=MockScheduler(),
+        storage=storage,
+        budget=2,
+        seed=42,
+        run_group="resume_pend",
+        optimizer_name="pending",
+        slurm=_slurm(),
+        output_root=output_root,
+        project_root=tmp_path,
+        log=lambda _: None,
+    )
+    # Attempt 1 was interrupted and is re-run, then attempt 2 continues.
+    assert [rec["attempt"] for rec in records] == [1, 2]
+    assert all(rec["success"] for rec in records)
+
