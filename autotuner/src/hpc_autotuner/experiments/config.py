@@ -29,7 +29,7 @@ class SlurmConfig:
     ntasks: int = 128
     cpus_per_task: int | None = None
     submit_retries: int = 3
-    polling_interval: float = 10.0
+    polling_interval: float = 60.0
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SlurmConfig":

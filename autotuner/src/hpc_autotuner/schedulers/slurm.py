@@ -9,7 +9,7 @@ from .base import Scheduler
 class SlurmScheduler(Scheduler):
     """Standard Slurm scheduler wrapper supporting submission and status polling."""
 
-    def __init__(self, project_root: str | Path | None = None, polling_interval: float = 2.0):
+    def __init__(self, project_root: str | Path | None = None, polling_interval: float = 60.0):
         self.project_root = Path(project_root or os.environ.get("SLURM_SUBMIT_DIR", Path.cwd())).resolve()
         self.polling_interval = polling_interval
 

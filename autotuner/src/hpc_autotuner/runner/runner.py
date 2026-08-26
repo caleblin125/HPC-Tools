@@ -28,7 +28,7 @@ class Runner:
         evaluation_budget: int = 10,
         project_root: str | Path | None = None,
         run_group: str = "default",
-        polling_interval: float = 1.0,
+        polling_interval: float = 60.0,
     ) -> None:
         self.optimizer = optimizer
         self.application = application

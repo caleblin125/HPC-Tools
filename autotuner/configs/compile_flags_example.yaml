@@ -34,7 +34,7 @@ slurm:
   nodes: 1
   ntasks: 1
   submit_retries: 3
-  polling_interval: 10
+  polling_interval: 60
 
 outputs:
   root: null
