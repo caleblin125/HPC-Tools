@@ -15,6 +15,7 @@ import pytest
 from hpc_autotuner.applications.hpl import HPLApplication
 from hpc_autotuner.experiments.common import run_experiment
 from hpc_autotuner.experiments.config import SlurmConfig
+from hpc_autotuner.experiments.jobscript import build_child_script
 from hpc_autotuner.optimizers.base import Optimizer
 from hpc_autotuner.storage.filesystem import FilesystemStorage
 from tests.conftest import MockScheduler
@@ -273,3 +274,19 @@ def test_interrupted_attempt_is_rerun_on_resume(tmp_path):
     )
     # Attempt 2 was re-run (the interrupted one) and attempt 3 continued.
     assert [rec["attempt"] for rec in records] == [2, 3]
+
+
+def test_child_script_captures_application_output_into_run_group_log():
+    """The rendered child script must append the application's stdout/stderr to
+    the run-group log, because the controller parses that log for the result
+    (this mirrors the old runner, which captured output with ``>> $OUTFILE``)."""
+    script = build_child_script(
+        slurm=_slurm(),
+        run_group="random",
+        attempt=1,
+        configuration={"memory_fraction": 0.88},
+        command="srun /path/to/xhpl",
+    )
+    assert "srun /path/to/xhpl" in script
+    assert '} >> "$OUTFILE" 2>&1' in script
+    assert script.index('{') < script.index("srun /path/to/xhpl") < script.index('} >> "$OUTFILE" 2>&1')
