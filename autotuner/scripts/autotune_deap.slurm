@@ -30,6 +30,11 @@ fi
 
 cd "${SLURM_SUBMIT_DIR}"
 
-# Forward any additional arguments (e.g. --budget N, --run-group NAME).
-shift || true
+# When the config was supplied as $1 (direct invocation), drop it before
+# forwarding the remaining driver arguments (e.g. --budget N, --run-group NAME).
+# When launched via scripts/launch_benchmark.sh the config comes from the
+# AUTOTUNE_CONFIG environment variable and $1 is already a driver argument.
+if [ -z "${AUTOTUNE_CONFIG:-}" ] && [ -n "${1:-}" ]; then
+    shift
+fi
 exec python -m hpc_autotuner.experiments.deap --config "$CONFIG" "$@"
