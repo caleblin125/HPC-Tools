@@ -107,32 +107,34 @@ minimization loss; any metric can be used, in either direction.
 ## Bundled example: the HPL benchmark
 
 The reference experiment tunes HPL on a full Perlmutter CPU node (1 node,
-128 tasks) and compares all six optimizers on identical terms.
+128 tasks) and compares the six optimizers on identical terms.
 
-* **Tunable:** `memory_fraction ∈ [0.80, 0.96]` of the node's memory.
-* **Memory model** (HPL FAQ): memory use is dominated by the N×N matrix of
-  doubles, `memory ≈ N² × 8 bytes × memory_factor`, so
-
-  ```python
-  N = floor(sqrt(memory_fraction * node_memory_bytes / 8))
-  ```
-
-  Doubling the memory only grows `N` by a factor of √2; the fraction band
-  leaves the OS headroom recommended by the FAQ.
-* **Fixed:** `NB`, `P`, `Q` and the HPL.dat algorithm parameters. They are
-  recorded in every evaluation but excluded from the search space, so every
-  optimizer sees the same execution path.
+* **Problem size.** The tunable problem size is `N`, bounded by the memory
+  model so the HPL matrix stays within `[0.80, 0.96]` of the node's ~512 GiB.
+  Following the HPL FAQ, `memory ≈ N² × 8 bytes × memory_factor`, so the
+  bounds are `N ∈ [⌊√(0.80·mem/8)⌋, ⌊√(0.96·mem/8)⌋]` (~234k–257k on a
+  512 GiB node). Every evaluation records `N` and `target_memory_bytes`.
+* **Full HPL.dat parameter space** (mirrors the previous `HPLtuning` work):
+  `NB`, `P`, `PMAP`, `PFACT`, `NBMIN`, `NDIV`, `RFACT`, `BCAST`, `DEPTH`,
+  `SWAP`, `L1`, `U`, `EQUIL` are tunable. Because HPL requires
+  `P*Q == ntasks`, `P` is a categorical choice over the divisors of `ntasks`
+  and `Q = ntasks / P` is derived (both are recorded in each evaluation).
+  `SWAP_THRESH` and `ALIGN` stay fixed and are recorded.
 * **Objective:** maximize GFLOPs.
 
 Configurations:
 
-* `configs/perlmutter_hpl.yaml` — the full 100-attempt benchmark (512 GiB node;
-  `slurm.time` is the **child** HPL job limit).
-* `configs/perlmutter_smoke.yaml` — a tiny 8 GiB smoke configuration so each
-  HPL run finishes in seconds instead of hours.
+* `configs/perlmutter_hpl.yaml` — the full 100-attempt benchmark (512 GiB node,
+  full tunable set; `slurm.time` is the **child** HPL job limit).
+* `configs/perlmutter_smoke.yaml` — a tiny 8 GiB smoke configuration with the
+  same tunable set, so each HPL run finishes in seconds instead of hours.
 
 Each optimizer has a thin parent script in `scripts/` that runs
 `python -m hpc_autotuner.experiments.<optimizer> --config "$CONFIG"`.
+
+> DEAP and CMA-ES search a normalized continuous space and cannot represent
+> categorical parameters (notably `P`), so they are not run against this
+> space. Random, SMAC3, Ray Tune, and Hyperopt handle the full discrete set.
 
 ### Smoke test before the real benchmark
 
@@ -155,19 +157,24 @@ a fully resolved `configuration` (including the derived `N`).
 ### Launching the full benchmark
 
 The 100-attempt benchmark is **launched separately**, after the smoke test
-passes:
+passes. One command launches all four discrete-capable optimizers:
 
 ```bash
-scripts/launch_benchmark.sh random   configs/perlmutter_hpl.yaml
-scripts/launch_benchmark.sh smac3    configs/perlmutter_hpl.yaml
-scripts/launch_benchmark.sh raytune  configs/perlmutter_hpl.yaml
-scripts/launch_benchmark.sh hyperopt configs/perlmutter_hpl.yaml
-scripts/launch_benchmark.sh deap     configs/perlmutter_hpl.yaml
-scripts/launch_benchmark.sh cmaes    configs/perlmutter_hpl.yaml
+scripts/launch_full_benchmark.sh configs/perlmutter_hpl.yaml   # random, smac3, raytune, hyperopt
+```
+
+or launch each individually:
+
+```bash
+scripts/launch_benchmark.sh random   configs/perlmutter_hpl.yaml --budget 100 --run-group random
+scripts/launch_benchmark.sh smac3    configs/perlmutter_hpl.yaml --budget 100 --run-group smac3
+scripts/launch_benchmark.sh raytune  configs/perlmutter_hpl.yaml --budget 100 --run-group raytune
+scripts/launch_benchmark.sh hyperopt configs/perlmutter_hpl.yaml --budget 100 --run-group hyperopt
 ```
 
 Each produces `outputs/autotuning/<run_group>/experiment.json` and
-`evaluations.jsonl`.
+`evaluations.jsonl`. If a parent job hits the wall limit, resubmit the same
+launch and the experiment resumes from its log.
 
 ## Using the framework for other applications
 
