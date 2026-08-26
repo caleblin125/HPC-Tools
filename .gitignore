@@ -19,3 +19,26 @@ HPLtuning/plots/
 .idea/
 *.swp
 .DS_Store
+
+# Scratch / debug artifacts (autotuner development)
+.pytest_cache/
+autotuner/dbg_*.py
+autotuner/dbg_*.txt
+autotuner/pt*.log
+autotuner/pt*_err.log
+autotuner/pytest_*.log
+autotuner/import_check.py
+autotuner/import_check.log
+autotuner/smac3_output/
+smac3_output/
+*.log
+probe*.py
+probe*.txt
+check_libs*.py
+check_libs*.txt
+optuna_check*.py
+optuna_check*.log
+pip_*.log
+skl_fix*.log
+pyrfr_install.log
+

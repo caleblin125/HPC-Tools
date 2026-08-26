@@ -4,6 +4,7 @@ import pytest
 
 from hpc_autotuner.applications.hpl import HPLApplication
 from hpc_autotuner.applications.slurm_test import SlurmTestApplication
+from hpc_autotuner.core.parameter import Parameter
 from hpc_autotuner.optimizers.adapter import OptionalOptimizerAdapter
 from hpc_autotuner.optimizers.cmaes import CMAESOptimizer
 from hpc_autotuner.optimizers.deap import DEAPOptimizer
@@ -40,7 +41,12 @@ def test_optional_optimizer_adapters_are_declared():
         assert cls.package_name
 
 
-def test_optional_optimizers_fail_gracefully_when_dependency_missing():
+def test_optional_optimizers_fail_gracefully_when_dependency_missing(monkeypatch):
+    """Without the optional dependency the adapter raises a helpful ImportError.
+
+    The check is environment-independent: importlib.import_module is faked so
+    the test works whether or not the optimizer libraries are installed.
+    """
     missing = [
         SMAC3Optimizer,
         CMAESOptimizer,
@@ -48,9 +54,14 @@ def test_optional_optimizers_fail_gracefully_when_dependency_missing():
         DEAPOptimizer,
         RayTuneOptimizer,
     ]
+
+    def fake_import(name, *args, **kwargs):
+        raise ImportError(f"no module named {name!r}")
+
+    monkeypatch.setattr(importlib, "import_module", fake_import)
     for cls in missing:
         with pytest.raises(ImportError):
-            cls(parameters=[{}])
+            cls(parameters=[Parameter("x", "float", bounds=(0.0, 1.0))])
 
 
 def test_hpl_application_parses_results_table():

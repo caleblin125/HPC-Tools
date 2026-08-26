@@ -4,10 +4,44 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hpc-autotuner"
-version = "0.1.0"
+version = "0.2.0"
 description = "Automated performance tuning framework for HPC applications"
+readme = "README.md"
+requires-python = ">=3.10"
 
-dependencies = []
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Random search needs no third-party optimizer library.
+smac = [
+    "smac>=2.0",
+    # SMAC3's RandomForest surrogate; pip only builds it where a compiler is
+    # available (standard on Linux HPC login nodes).
+    "pyrfr>=0.9",
+    "scikit-learn>=1.6,<1.9",
+]
+ray = [
+    "ray[tune]>=2.31",
+    "optuna>=3.6",
+]
+hyperopt = ["hyperopt>=0.2.7"]
+deap = ["deap>=1.4"]
+cmaes = ["cmaes>=0.10"]
+plot = ["matplotlib>=3.8", "numpy>=1.26"]
+all = [
+    "smac>=2.0",
+    "pyrfr>=0.9",
+    "scikit-learn>=1.6,<1.9",
+    "ray[tune]>=2.31",
+    "optuna>=3.6",
+    "hyperopt>=0.2.7",
+    "deap>=1.4",
+    "cmaes>=0.10",
+    "matplotlib>=3.8",
+    "numpy>=1.26",
+]
 
 [project.scripts]
 hpc-tune = "hpc_autotuner.cli:main"

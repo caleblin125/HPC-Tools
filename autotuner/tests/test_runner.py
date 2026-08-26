@@ -1,6 +1,10 @@
+import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+import pytest
 
 from hpc_autotuner.applications.base import Application
 from hpc_autotuner.core.evaluation import Evaluation
@@ -9,6 +13,20 @@ from hpc_autotuner.optimizers.base import Optimizer
 from hpc_autotuner.runner.runner import Runner
 from hpc_autotuner.schedulers.base import Scheduler
 from hpc_autotuner.storage.filesystem import FilesystemStorage
+
+
+def _bash_available() -> bool:
+    if shutil.which("bash") is None:
+        return False
+    try:
+        result = subprocess.run(["bash", "-c", "true"], capture_output=True, timeout=10)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+_BASH_AVAILABLE = _bash_available()
+
 
 
 class FakeApp(Application):
@@ -67,6 +85,7 @@ class DummyJob:
     environment: dict | None = None
 
 
+@pytest.mark.skipif(not _BASH_AVAILABLE, reason="bash interpreter required to run rendered job scripts")
 def test_runner_end_to_end(tmp_path):
     storage = FilesystemStorage(root=tmp_path / "run")
     app = FakeApp()

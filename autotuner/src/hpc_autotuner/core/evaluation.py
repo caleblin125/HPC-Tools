@@ -21,6 +21,12 @@ class Evaluation:
     started_at: str | None = None
     finished_at: str | None = None
     elapsed_seconds: float | None = None
+    attempt: int | None = None
+    optimizer: str | None = None
+    run_group: str | None = None
+    queue_time: float | None = None
+    compute_time: float | None = None
+    error: str | None = None
 
     def __post_init__(self) -> None:
         if self.submitted_at is None:

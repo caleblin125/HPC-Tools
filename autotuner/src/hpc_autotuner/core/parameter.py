@@ -9,7 +9,11 @@ ParameterKind = Literal["int", "float", "categorical"]
 
 @dataclass(frozen=True)
 class Parameter:
-    """A tunable scalar parameter for an HPC application."""
+    """A tunable scalar parameter for an HPC application.
+
+    When ``fixed_value`` is not ``None`` the parameter is pinned to that value
+    for every evaluation; optimizers only ever see *tunable* parameters.
+    """
 
     name: str
     kind: ParameterKind
@@ -17,6 +21,7 @@ class Parameter:
     choices: list[Any] | None = None
     log_scale: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    fixed_value: Any = None
 
     def __post_init__(self) -> None:
         if not self.name or not str(self.name).strip():
@@ -65,4 +70,5 @@ class Parameter:
             "choices": list(self.choices) if self.choices is not None else None,
             "log_scale": self.log_scale,
             "metadata": self.metadata,
+            "fixed_value": self.fixed_value,
         }

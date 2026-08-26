@@ -1,0 +1,52 @@
+# Full HPL benchmark configuration for Perlmutter CPU nodes.
+#
+# This file is the single place for machine-specific settings (account,
+# partition, QoS, HPL executable, node memory). Nothing here is hard-coded in
+# the framework, so the same code runs on any Slurm cluster.
+#
+#   experiment.optimizer     is overridden by the six drivers (random, smac3,
+#                            raytune, hyperopt, deap, cmaes).
+#   slurm.time               is the HPL *child* job time limit; the parent
+#                            autotuner job should be given a much larger limit
+#                            when launching (see scripts/launch_benchmark.sh
+#                            --time) because it runs 100 sequential children.
+
+experiment:
+  name: hpl-benchmark
+  optimizer: random
+  run_group: random
+  budget: 100
+  seed: 42
+
+objective:
+  metric: gflops
+  direction: maximize
+
+application:
+  type: hpl
+  # Perlmutter CPU-node xhpl built with the Cray MPI wrapper.
+  executable: /global/common/software/m4007/opt/hpl-2.3/bin/xhpl
+  # Perlmutter CPU node: 128 cores, 512 GiB RAM.
+  node_memory_bytes: 512GiB
+  # HPL memory model: memory ~= N^2 * 8 bytes * memory_factor (HPL FAQ).
+  memory_factor: 1.0
+  memory_fraction_bounds: [0.80, 0.96]
+  fixed:
+    NB: 192
+    P: 8
+    Q: 16
+
+slurm:
+  account: null
+  partition: null
+  qos: shared
+  constraint: cpu
+  time: "08:00:00"
+  exclusive: true
+  nodes: 1
+  ntasks: 128
+  submit_retries: 3
+  polling_interval: 15
+
+outputs:
+  root: null

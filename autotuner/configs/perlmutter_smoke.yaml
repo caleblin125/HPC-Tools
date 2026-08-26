@@ -1,0 +1,42 @@
+# Quick smoke-test configuration: uses a tiny fraction of the node memory so
+# each HPL run finishes in seconds/minutes instead of hours. The full
+# benchmark config (configs/perlmutter_hpl.yaml) uses the real 512 GiB node.
+#
+#   node_memory_bytes: 8GiB  ->  N = sqrt(0.88 * 8GiB / 8) ~= 30,000
+
+experiment:
+  name: hpl-smoke
+  optimizer: random
+  run_group: smoke
+  budget: 3
+  seed: 42
+
+objective:
+  metric: gflops
+  direction: maximize
+
+application:
+  type: hpl
+  executable: /global/common/software/m4007/opt/hpl-2.3/bin/xhpl
+  node_memory_bytes: 8GiB
+  memory_factor: 1.0
+  memory_fraction_bounds: [0.80, 0.96]
+  fixed:
+    NB: 192
+    P: 8
+    Q: 16
+
+slurm:
+  account: null
+  partition: null
+  qos: shared
+  constraint: cpu
+  time: "00:30:00"
+  exclusive: false
+  nodes: 1
+  ntasks: 128
+  submit_retries: 3
+  polling_interval: 10
+
+outputs:
+  root: null
