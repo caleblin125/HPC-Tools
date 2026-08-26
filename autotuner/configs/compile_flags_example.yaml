@@ -1,0 +1,40 @@
+# Example non-HPL experiment: tune compiler flags for an arbitrary
+# build-and-run benchmark (see README "Using the framework for other
+# applications"). This config uses the bundled CompileFlagsApplication.
+#
+# The tunable parameters are opt_level (int), arch (categorical), lto
+# (categorical), so pick a discrete optimizer (random/smac3/raytune/hyperopt).
+# The fixed block can carry application-specific settings such as build_dir.
+
+experiment:
+  name: compile-flags-demo
+  optimizer: random
+  run_group: compile_flags
+  budget: 5
+  seed: 42
+
+objective:
+  metric: score
+  direction: maximize
+
+application:
+  type: compile_flags
+  # Command/binary invoked after the build (CFLAGS are added automatically).
+  executable: ./benchmark
+  fixed:
+    build_dir: my_app
+
+slurm:
+  account: null
+  partition: null
+  qos: shared
+  constraint: cpu
+  time: "00:10:00"
+  exclusive: false
+  nodes: 1
+  ntasks: 1
+  submit_retries: 3
+  polling_interval: 10
+
+outputs:
+  root: null

@@ -1,58 +1,247 @@
 # HPC Autotuner
 
-Automated performance tuning for HPC applications on Slurm clusters. The current
-benchmark experiment compares **six autotuning methods** on the **HPL** (High
-Performance Linpack) benchmark:
+A generic, Slurm-backed autotuning framework for HPC applications. A parent
+controller job asks an optimizer for a configuration, runs it as a child Slurm
+job, parses a scalar performance metric from the output, and feeds the result
+back to the optimizer — repeated for a fixed, sequential evaluation budget.
 
-| Optimizer  | Driver module                       | Optional dependency |
-|------------|-------------------------------------|---------------------|
-| Random     | `hpc_autotuner.experiments.random`  | (none)              |
-| SMAC3      | `hpc_autotuner.experiments.smac3`   | `smac`              |
-| Ray Tune   | `hpc_autotuner.experiments.raytune` | `ray[tune]`         |
-| Hyperopt   | `hpc_autotuner.experiments.hyperopt`| `hyperopt`          |
-| DEAP       | `hpc_autotuner.experiments.deap`    | `deap`              |
-| CMA-ES     | `hpc_autotuner.experiments.cmaes`   | `cmaes`             |
+The framework is **application-agnostic**. The "application" is any executable
+or build-and-run workflow whose behaviour depends on a set of parameters and
+whose performance reduces to a scalar metric. The bundled, fully configured
+example is the **HPL** (High Performance Linpack) benchmark, but the same
+machinery tunes other workloads — compiler/build flags, runtime knobs, MPI or
+thread configuration, I/O parameters, and so on. See *Using the framework for
+other applications* below.
 
-Each optimizer receives exactly **100 completed HPL evaluations** (a sequential
-budget), the same HPL executable, the same 1-node / 128-task Slurm allocation,
-the same parameter bounds, the same result parser, and the same objective
-(**maximize GFLOPs**).
+## How the framework is structured
 
-## Experiment design
+| Component | Module | Role |
+|-----------|--------|------|
+| Application | `hpc_autotuner.applications.*` | declares tunable parameters, renders a shell command, parses results |
+| Optimizers | `hpc_autotuner.optimizers.*` | six autotuning methods behind one `suggest()` / `observe()` interface |
+| Controller | `hpc_autotuner.experiments.common` | sequential parent-job loop: suggest → child Slurm job → parse → record → observe |
+| Storage | `hpc_autotuner.storage.filesystem` | `experiment.json` metadata + `evaluations.jsonl` records |
+| Plotting | `hpc_autotuner.plotting.core` | field-based analysis and plots (any metric, any optimizer group) |
+| CLI | `hpc_autotuner.cli` | `hpc-tune plot` |
 
-* **Parent/controller job.** The autotuner runs as a Slurm parent job. Its
-  Python process initializes the optimizer, submits one HPL *child* job at a
-  time, waits for it, parses GFLOPs, records the evaluation, feeds it back to
-  the optimizer (`optimizer.observe(...)`), then asks for the next
-  configuration. Evaluations are strictly **sequential** — the optimizer sees
-  the result of attempt N before attempt N+1 is generated.
-* **Memory model.** The tunable is `memory_fraction ∈ [0.80, 0.96]` of the node's
-  ~512 GiB. Following the HPL FAQ, memory use is dominated by the N×N matrix of
-  doubles: `memory_bytes ≈ N² × 8 × memory_factor`, so
+### The application interface
+
+An application is a small subclass of
+`hpc_autotuner.applications.base.Application`:
+
+* `parameters` — a list of `Parameter` objects: `int` / `float` (with
+  `bounds`) or `categorical` (with `choices`). A parameter with a non-`None`
+  `fixed_value` is pinned for every evaluation and is **not** part of the
+  optimizer's search space.
+* `command(configuration) -> str | list[str]` — turn a configuration into the
+  shell command the child Slurm job executes.
+* `parse_result(output) -> {"metrics": {...}, "objective": <float|None>,
+  "success": bool}` — extract the scalar objective (and any other metrics)
+  from the application's output.
+* `resolve_configuration(configuration)` — optional; merge fixed values and
+  derive quantities. (HPL derives the problem size `N` from `memory_fraction`.)
+
+### Optimizers
+
+Six autotuning methods share one common interface and (by default) use
+**optional** dependencies:
+
+| Optimizer | Adapter | Optional dependency | Handles categoricals? |
+|-----------|---------|---------------------|------------------------|
+| Random Search | `hpc_autotuner.optimizers.random` | (none) | yes |
+| SMAC3 | `hpc_autotuner.optimizers.smac3` | `smac` | yes |
+| Ray Tune | `hpc_autotuner.optimizers.raytune` | `ray[tune]` | yes |
+| Hyperopt | `hpc_autotuner.optimizers.hyperopt` | `hyperopt` | yes |
+| DEAP | `hpc_autotuner.optimizers.deap` | `deap` | no (numeric only) |
+| CMA-ES | `hpc_autotuner.optimizers.cmaes` | `cmaes` | no (numeric only) |
+
+> DEAP and CMA-ES search a normalized continuous space, so they require purely
+> numeric tunables. Use Random/SMAC3/Ray Tune/Hyperopt when the parameter space
+> contains categorical parameters.
+
+### Controller (parent Slurm job)
+
+Each optimizer experiment runs as a parent Slurm job whose Python process:
+
+1. initializes the optimizer,
+2. `optimizer.suggest()` → a configuration,
+3. resolves and validates the configuration,
+4. renders a child Slurm script from `resources/slurm/job.sh`,
+5. submits it with `sbatch`, then waits for the child job,
+6. parses the application's output → the objective (GFLOPs or whatever metric),
+7. appends an evaluation record to `evaluations.jsonl`,
+8. `optimizer.observe(config, result)`,
+9. repeats until the evaluation budget is reached.
+
+Evaluations are strictly **sequential** — the optimizer sees the result of
+attempt N before attempt N+1 is generated. Attempt numbers run from 1 to the
+budget; a failed `sbatch` is recorded (`FAILED_SUBMISSION`) and does **not**
+consume an attempt. Experiments are **resumable**: on restart the controller
+replays `evaluations.jsonl` into the optimizer and re-runs any interrupted
+evaluation.
+
+### Output layout and records
+
+```
+outputs/
+  slurm/job_<JOBID>.out|err             # child job stdout/stderr
+  descriptions.txt                      # human-readable job descriptions
+  autotuning/<run_group>/
+    experiment.json                     # metadata: seed, space, objective, slurm, ...
+    evaluations.jsonl                   # one JSON record per evaluation event
+  <run_group>/<run_group>_<JOBID>.log   # child run-group log (application output)
+```
+
+Each evaluation record contains the optimizer name, attempt number, the fully
+resolved configuration, the Slurm job id, status, success, the objective, and
+the application metrics (e.g. `gflops`, `runtime`), plus timing fields
+(`queue_time`, `compute_time`) when `sacct` is available.
+
+### Objectives
+
+The objective is a scalar metric plus a direction. An application declares
+`objective_metric` and `objective_direction` (defaults: `gflops` / `maximize`).
+The controller records the metric and the adapters convert it to the internal
+minimization loss; any metric can be used, in either direction.
+
+## Bundled example: the HPL benchmark
+
+The reference experiment tunes HPL on a full Perlmutter CPU node (1 node,
+128 tasks) and compares all six optimizers on identical terms.
+
+* **Tunable:** `memory_fraction ∈ [0.80, 0.96]` of the node's memory.
+* **Memory model** (HPL FAQ): memory use is dominated by the N×N matrix of
+  doubles, `memory ≈ N² × 8 bytes × memory_factor`, so
 
   ```python
   N = floor(sqrt(memory_fraction * node_memory_bytes / 8))
   ```
 
-  Every recorded configuration includes `memory_fraction`, `target_memory_bytes`,
-  `N`, `NB`, `P`, `Q`, and the fixed HPL.dat algorithm parameters.
-* **Output layout.** Results follow the team convention plus JSON logs:
+  Doubling the memory only grows `N` by a factor of √2; the fraction band
+  leaves the OS headroom recommended by the FAQ.
+* **Fixed:** `NB`, `P`, `Q` and the HPL.dat algorithm parameters. They are
+  recorded in every evaluation but excluded from the search space, so every
+  optimizer sees the same execution path.
+* **Objective:** maximize GFLOPs.
 
-  ```
-  outputs/
-    slurm/job_<JOBID>.out|err          # child job stdout/stderr
-    descriptions.txt                   # human-readable job descriptions
-    autotuning/<run_group>/
-      experiment.json                  # experiment metadata (seed, space, slurm, ...)
-      evaluations.jsonl                # one JSON record per evaluation event
-    <run_group>/<run_group>_<JOBID>.log   # child HPL run-group log
-  ```
+Configurations:
 
-* **Attempt numbering & resume.** Attempts start at 1 and end at exactly the
-  budget. Only a successful `sbatch` consumes an attempt number; failed
-  submissions are recorded (`FAILED_SUBMISSION`) and never counted. If the
-  controller is interrupted it resumes from `evaluations.jsonl`, replays history
-  into the optimizer, and re-runs any interrupted evaluation.
+* `configs/perlmutter_hpl.yaml` — the full 100-attempt benchmark (512 GiB node;
+  `slurm.time` is the **child** HPL job limit).
+* `configs/perlmutter_smoke.yaml` — a tiny 8 GiB smoke configuration so each
+  HPL run finishes in seconds instead of hours.
+
+Each optimizer has a thin parent script in `scripts/` that runs
+`python -m hpc_autotuner.experiments.<optimizer> --config "$CONFIG"`.
+
+### Smoke test before the real benchmark
+
+Prove the pipeline works end to end before launching expensive runs:
+
+```bash
+scripts/run_smoke_benchmark.sh           # budget=1, then budget=3 (random optimizer)
+```
+
+Then verify:
+
+```bash
+ls outputs/autotuning/smoke_single/evaluations.jsonl
+ls outputs/autotuning/smoke_three/evaluations.jsonl
+```
+
+Each record should show `status: COMPLETED`, a parsed `objective` (GFLOPs), and
+a fully resolved `configuration` (including the derived `N`).
+
+### Launching the full benchmark
+
+The 100-attempt benchmark is **launched separately**, after the smoke test
+passes:
+
+```bash
+scripts/launch_benchmark.sh random   configs/perlmutter_hpl.yaml
+scripts/launch_benchmark.sh smac3    configs/perlmutter_hpl.yaml
+scripts/launch_benchmark.sh raytune  configs/perlmutter_hpl.yaml
+scripts/launch_benchmark.sh hyperopt configs/perlmutter_hpl.yaml
+scripts/launch_benchmark.sh deap     configs/perlmutter_hpl.yaml
+scripts/launch_benchmark.sh cmaes    configs/perlmutter_hpl.yaml
+```
+
+Each produces `outputs/autotuning/<run_group>/experiment.json` and
+`evaluations.jsonl`.
+
+## Using the framework for other applications
+
+Three steps to tune a new workload (compiler flags, runtime knobs, ...):
+
+1. **Subclass `Application`** — declare the tunable parameters, render the
+   shell command, and parse the scalar objective from the output.
+2. **Register it** with `register_application("<kind>", factory)`.
+3. **Point a config** at `application.type: <kind>` and run it through the
+   same drivers, scripts, storage, and plotting utility.
+
+The full, tested example below (compiler-flag tuning) ships in
+`src/hpc_autotuner/applications/compile_flags.py`:
+
+```python
+from hpc_autotuner.applications.base import Application
+from hpc_autotuner.core.parameter import Parameter
+
+class CompileFlagsApplication(Application):
+    parameters = [
+        Parameter("opt_level", "int", bounds=(0, 3)),
+        Parameter("arch", "categorical", choices=["native", "x86-64", "avx2"]),
+        Parameter("lto", "categorical", choices=[False, True]),
+    ]
+    objective_metric = "score"
+    objective_direction = "maximize"
+
+    def command(self, configuration):
+        flags = [f"-O{int(configuration['opt_level'])}",
+                 f"-march={configuration['arch']}"]
+        if configuration.get("lto"):
+            flags.append("-flto")
+        cflags = " ".join(flags)
+        return (
+            f"CFLAGS='{cflags}' make clean >/dev/null 2>&1 || true\n"
+            f"CFLAGS='{cflags}' make >/dev/null 2>&1 || true\n"
+            "./benchmark\n"
+        )
+
+    def parse_result(self, output):
+        import re
+        m = re.search(r"score\s*[:=]\s*([0-9.eE+-]+)", output, re.IGNORECASE)
+        if not m:
+            return {"metrics": {}, "objective": None, "success": False}
+        value = float(m.group(1))
+        return {"metrics": {"score": value}, "objective": value, "success": True}
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(executable=config.executable or "./benchmark",
+                   fixed=config.fixed)
+```
+
+Register it (in your experiment entrypoint or at import time):
+
+```python
+from hpc_autotuner.experiments.common import register_application
+register_application("compile_flags", CompileFlagsApplication.from_config)
+```
+
+Then run it with the ordinary drivers:
+
+```bash
+# one-off from a login node
+python -m hpc_autotuner.experiments.random --config configs/compile_flags_example.yaml --budget 5
+
+# or as a parent Slurm job
+scripts/launch_benchmark.sh random configs/compile_flags_example.yaml
+```
+
+The bundled `configs/compile_flags_example.yaml` shows the config shape; the
+generic parts (controller, optimizers, storage, plotting, CLI) are unchanged —
+only the `Application` differs. Note that `compile_flags` uses categorical
+parameters, so pick a discrete optimizer (Random/SMAC3/Ray/Hyperopt).
 
 ## Installation
 
@@ -74,29 +263,60 @@ pip install -e '.[all]'         # everything
 ## Configuration
 
 Machine-specific settings (account, partition, QoS, constraint, executable,
-node memory) live in a YAML experiment configuration, never in code:
+etc.) live in a YAML experiment configuration, never in code. The schema is
+generic:
 
-* `configs/perlmutter_hpl.yaml` — the full 100-attempt benchmark (512 GiB node,
-  `slurm.time` is the **child** HPL job limit).
-* `configs/perlmutter_smoke.yaml` — a tiny 8 GiB smoke configuration so HPL runs
-  finish in seconds instead of hours.
+```yaml
+experiment:
+  name: my-experiment
+  optimizer: random      # random | smac3 | raytune | hyperopt | deap | cmaes
+  run_group: my_group
+  budget: 100            # completed evaluations
+  seed: 42               # recorded in experiment.json for reproducibility
 
-The parent job should be given a much larger time limit than the children,
-because it runs up to 100 sequential HPL jobs.
+objective:
+  metric: score          # any metric recorded by the application
+  direction: maximize    # maximize | minimize
 
-## Running an optimizer
+application:
+  type: hpl              # registered application kind (see register_application)
+  executable: /path/to/binary
+  fixed: {}              # application-specific pinned values
+
+slurm:
+  account: null          # machine-specific; set here or on the sbatch command line
+  partition: null
+  qos: shared
+  constraint: cpu
+  time: "00:30:00"       # child job time limit (the parent should get more)
+  exclusive: false
+  nodes: 1
+  ntasks: 128
+  submit_retries: 3
+  polling_interval: 15
+
+outputs:
+  root: null             # default: <project_root>/outputs/autotuning
+```
+
+Application-specific fields may be added under `application` (the HPL example
+uses `node_memory_bytes`, `memory_factor`, `memory_fraction_bounds`); the
+factory for the registered kind decides which fields it reads.
+
+## Running an experiment
 
 Launch one optimizer's parent Slurm job:
 
 ```bash
-scripts/launch_benchmark.sh <optimizer> configs/perlmutter_hpl.yaml
+scripts/launch_benchmark.sh <optimizer> <config.yaml>
 ```
 
 `<optimizer>` is one of `random`, `smac3`, `raytune`, `hyperopt`, `deap`,
 `cmaes`. The launcher reads the account/partition/QoS/constraint/time from the
-YAML and passes them to `sbatch`; it exports `AUTOTUNE_CONFIG` (the config path)
-and `AUTOTUNE_VENV` (defaults to `$PWD/.venv`) into the parent job. Each parent
-script (e.g. `scripts/autotune_random.slurm`) is a thin wrapper that runs
+YAML and passes them to `sbatch`; it exports `AUTOTUNE_CONFIG` (the config
+path) and `AUTOTUNE_VENV` (defaults to `$PWD/.venv`) into the parent job. Each
+parent script (`scripts/autotune_<optimizer>.slurm`) is a thin wrapper that
+runs
 
 ```bash
 python -m hpc_autotuner.experiments.<optimizer> --config "$CONFIG"
@@ -115,50 +335,11 @@ single-evaluation check):
 python -m hpc_autotuner.experiments.random --config configs/perlmutter_smoke.yaml --budget 1
 ```
 
-## Perlmutter smoke test (before the real benchmark)
-
-Prove the pipeline works end to end before launching expensive runs:
-
-```bash
-scripts/run_smoke_benchmark.sh           # budget=1, then budget=3 (random optimizer)
-```
-
-Then verify:
-
-```bash
-ls outputs/autotuning/smoke_single/evaluations.jsonl
-ls outputs/autotuning/smoke_three/evaluations.jsonl
-```
-
-Each record should show `status: COMPLETED`, a parsed `objective` (GFLOPs), and
-a fully-resolved `configuration` (including the derived `N`).
-
-There is also a legacy runner smoke script (`scripts/run_tuning_smoke.py`) that
-uses the older 1-task `Runner`; the new benchmark drivers use the sequential
-controller in `hpc_autotuner.experiments.common`.
-
-## Launching the full benchmark
-
-The 100-attempt benchmark is **launched separately**, after the smoke test
-passes:
-
-```bash
-scripts/launch_benchmark.sh random   configs/perlmutter_hpl.yaml
-scripts/launch_benchmark.sh smac3    configs/perlmutter_hpl.yaml
-scripts/launch_benchmark.sh raytune  configs/perlmutter_hpl.yaml
-scripts/launch_benchmark.sh hyperopt configs/perlmutter_hpl.yaml
-scripts/launch_benchmark.sh deap     configs/perlmutter_hpl.yaml
-scripts/launch_benchmark.sh cmaes    configs/perlmutter_hpl.yaml
-```
-
-Each produces `outputs/autotuning/<run_group>/experiment.json` and
-`evaluations.jsonl`.
-
 ## Analysis / plotting
 
-The plotting utility is generalized beyond GFLOPs: it reads any
-`evaluations.jsonl`, discovers all optimizer groups under an input directory,
-and plots any recorded field against any other, with an optional aggregate.
+The plotting utility is metric-agnostic: it reads any `evaluations.jsonl`,
+discovers all optimizer groups under an input directory, and plots any recorded
+field against any other, with an optional aggregate.
 
 ```bash
 hpc-tune plot --input outputs/autotuning --x attempt --y gflops --aggregate cummax --output cummax_gflops.png
@@ -166,16 +347,40 @@ hpc-tune plot --input outputs/autotuning --x attempt --y gflops --aggregate cumm
 python -c "from hpc_autotuner.plotting.core import plot_experiments; plot_experiments('outputs/autotuning', y='gflops', aggregate='cummax', output='cummax_gflops.png')"
 ```
 
+Any recorded field works: `runtime`, `queue_time`, `memory_fraction`, `N`, ...,
+for any application. `hpc-tune plot` is run manually — never as part of the
+benchmark.
+
 ## Tests
 
-Unit tests never touch Slurm — a mock scheduler synthesizes HPL logs in-process:
+Unit tests never touch Slurm — a mock scheduler synthesizes application logs
+in-process:
 
 ```bash
-pytest tests/test_benchmark.py tests/test_experiment.py tests/test_plotting.py tests/test_runner.py tests/test_real_slurm_and_optims.py
+pytest tests/test_benchmark.py tests/test_experiment.py tests/test_plotting.py tests/test_runner.py tests/test_real_slurm_and_optims.py tests/test_compile_flags.py
 pytest tests/test_optimizers.py      # needs the optional optimizer libs installed
 ```
 
-Covered: parameter bounds, `memory_fraction -> N` conversion, HPL.dat
-generation, HPL result parsing, JSON/JSONL logging, attempt numbering, resume
-from log, optimizer adapters, and plotting data transforms.
+Covered: parameter bounds and clipping, memory-fraction → problem-size
+conversion, HPL.dat generation, HPL result parsing, the generic
+`CompileFlagsApplication` (command rendering, parsing, registration), JSON/JSONL
+logging, attempt numbering, resume-from-log, optimizer adapters, and plotting
+data transforms.
 
+## Repository layout
+
+```
+autotuner/
+  configs/                     # YAML experiment configurations
+  scripts/                     # parent Slurm scripts + launchers
+  src/hpc_autotuner/
+    applications/              # Application adapters (hpl, compile_flags, ...)
+    core/                      # Parameter, ParameterSpace, Evaluation, paths
+    experiments/               # sequential controller, config, jobscript, drivers
+    optimizers/                # six optimizer adapters + registry
+    plotting/                  # generalized analysis/plotting
+    resources/slurm/           # child job template
+    runner/                    # legacy runner (single-task smoke tool)
+    schedulers/ storage/ cli.py
+  tests/                       # unit tests (mock scheduler, no Slurm)
+```

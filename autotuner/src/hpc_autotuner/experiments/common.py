@@ -62,17 +62,64 @@ def _now() -> str:
 # ---------------------------------------------------------------------------
 
 
+#: Factory that builds an :class:`Application` from an experiment config.
+ApplicationFactory = Callable[[ExperimentConfig], Application]
+
+#: Registered application types, keyed by ``config.application_type``.
+_APPLICATION_FACTORIES: dict[str, ApplicationFactory] = {}
+
+
+def register_application(kind: str, factory: ApplicationFactory) -> None:
+    """Register a new application type so it can be selected from an experiment
+    YAML via ``application.type: <kind>``.
+
+    This is the extension point for using the framework with a new workload
+    (e.g. compiler-flag tuning, a runtime-knob benchmark, ...). Subclass
+    :class:`~hpc_autotuner.applications.base.Application`, then::
+
+        register_application("my_app", my_app_factory)
+    """
+    if not isinstance(kind, str) or not kind.strip():
+        raise ValueError("application kind must be a non-empty string")
+    if not callable(factory):
+        raise TypeError("application factory must be callable")
+    _APPLICATION_FACTORIES[kind] = factory
+
+
+def _build_hpl(config: ExperimentConfig) -> Application:
+    return HPLApplication.for_benchmark(
+        executable=config.executable,
+        node_memory_bytes=config.node_memory_bytes,
+        memory_factor=config.memory_factor,
+        memory_fraction_bounds=config.memory_fraction_bounds,
+        fixed=config.fixed,
+    )
+
+
+def _build_compile_flags(config: ExperimentConfig) -> Application:
+    from hpc_autotuner.applications.compile_flags import CompileFlagsApplication
+
+    return CompileFlagsApplication.from_config(config)
+
+
+#: Application types available out of the box.
+register_application("hpl", _build_hpl)
+register_application("compile_flags", _build_compile_flags)
+
+
 def build_application(config: ExperimentConfig) -> Application:
-    """Build the application from an experiment config (HPL only today)."""
-    if config.application_type == "hpl":
-        return HPLApplication.for_benchmark(
-            executable=config.executable,
-            node_memory_bytes=config.node_memory_bytes,
-            memory_factor=config.memory_factor,
-            memory_fraction_bounds=config.memory_fraction_bounds,
-            fixed=config.fixed,
+    """Build the application named by ``config.application_type``.
+
+    Register new applications with :func:`register_application`; see also the
+    bundled :mod:`hpc_autotuner.applications.compile_flags` example.
+    """
+    factory = _APPLICATION_FACTORIES.get(config.application_type)
+    if factory is None:
+        raise ValueError(
+            f"Unsupported application type {config.application_type!r}; "
+            f"registered types: {sorted(_APPLICATION_FACTORIES)}"
         )
-    raise ValueError(f"Unsupported application type: {config.application_type!r}")
+    return factory(config)
 
 
 def build_optimizer(
