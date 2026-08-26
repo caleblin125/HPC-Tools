@@ -28,8 +28,8 @@ application:
 
 slurm:
   account: null
-  partition: null
-  qos: shared
+  partition: regular_milan_ss11
+  qos: regular_1
   constraint: cpu
   time: "00:30:00"
   exclusive: false

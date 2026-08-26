@@ -3,15 +3,14 @@
 #
 # Machine-specific account/partition/QoS/time/exclusive settings are supplied
 # at submit time by scripts/launch_benchmark.sh (or by hand with sbatch
-# flags); the defaults below are generic and Perlmutter-safe.
-#
-# The Python process is the parent/controller: it initializes the optimizer,
-# submits one HPL child job at a time, waits, parses, observes, and repeats.
+# flags); the defaults below are generic and Perlmutter-safe (regular CPU
+# partition).
 
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -J autotune-smac3
-#SBATCH -q shared
+#SBATCH -p regular_milan_ss11
+#SBATCH -q regular_1
 #SBATCH --constraint=cpu
 #SBATCH --output=outputs/slurm/autotune_smac3_%j.out
 #SBATCH --error=outputs/slurm/autotune_smac3_%j.err
