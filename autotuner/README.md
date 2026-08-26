@@ -18,7 +18,7 @@ other applications* below.
 | Component | Module | Role |
 |-----------|--------|------|
 | Application | `hpc_autotuner.applications.*` | declares tunable parameters, renders a shell command, parses results |
-| Optimizers | `hpc_autotuner.optimizers.*` | six autotuning methods behind one `suggest()` / `observe()` interface |
+| Optimizers | `hpc_autotuner.optimizers.*` | seven autotuning methods behind one `suggest()` / `observe()` interface |
 | Controller | `hpc_autotuner.experiments.common` | sequential parent-job loop: suggest → child Slurm job → parse → record → observe |
 | Storage | `hpc_autotuner.storage.filesystem` | `experiment.json` metadata + `evaluations.jsonl` records |
 | Plotting | `hpc_autotuner.plotting.core` | field-based analysis and plots (any metric, any optimizer group) |
@@ -43,12 +43,13 @@ An application is a small subclass of
 
 ### Optimizers
 
-Six autotuning methods share one common interface and (by default) use
+Seven autotuning methods share one common interface and (by default) use
 **optional** dependencies:
 
 | Optimizer | Adapter | Optional dependency | Handles categoricals? |
 |-----------|---------|---------------------|------------------------|
 | Random Search | `hpc_autotuner.optimizers.random` | (none) | yes |
+| Elite Search | `hpc_autotuner.optimizers.elite` | (none) | yes (int/categorical) |
 | SMAC3 | `hpc_autotuner.optimizers.smac3` | `smac` | yes |
 | Ray Tune | `hpc_autotuner.optimizers.raytune` | `ray[tune]` | yes |
 | Hyperopt | `hpc_autotuner.optimizers.hyperopt` | `hyperopt` | yes |
@@ -57,7 +58,10 @@ Six autotuning methods share one common interface and (by default) use
 
 > DEAP and CMA-ES search a normalized continuous space, so they require purely
 > numeric tunables. Use Random/SMAC3/Ray Tune/Hyperopt when the parameter space
-> contains categorical parameters.
+> contains categorical parameters. **Elite Search** is a dependency-free
+> elitist local search over ordered discrete values, migrated from the previous
+> standalone `HPC-Tools/HPLtuning` project (it was the `EliteRandomSearch`
+> policy used there to tune HPL).
 
 ### Controller (parent Slurm job)
 
@@ -107,7 +111,7 @@ minimization loss; any metric can be used, in either direction.
 ## Bundled example: the HPL benchmark
 
 The reference experiment tunes HPL on a full Perlmutter CPU node (1 node,
-128 tasks) and compares the six optimizers on identical terms.
+128 tasks) and compares the seven optimizers on identical terms.
 
 * **Problem size.** The tunable problem size is `N`, bounded by the memory
   model so the HPL matrix stays within `[0.80, 0.96]` of the node's ~512 GiB.
@@ -134,7 +138,8 @@ Each optimizer has a thin parent script in `scripts/` that runs
 
 > DEAP and CMA-ES search a normalized continuous space and cannot represent
 > categorical parameters (notably `P`), so they are not run against this
-> space. Random, SMAC3, Ray Tune, and Hyperopt handle the full discrete set.
+> space. Random, SMAC3, Ray Tune, Hyperopt, and Elite Search handle the full
+> discrete set.
 
 ### Smoke test before the real benchmark
 
@@ -157,10 +162,10 @@ a fully resolved `configuration` (including the derived `N`).
 ### Launching the full benchmark
 
 The 100-attempt benchmark is **launched separately**, after the smoke test
-passes. One command launches all four discrete-capable optimizers:
+passes. One command launches all five discrete-capable optimizers:
 
 ```bash
-scripts/launch_full_benchmark.sh configs/perlmutter_hpl.yaml   # random, smac3, raytune, hyperopt
+scripts/launch_full_benchmark.sh configs/perlmutter_hpl.yaml   # random, smac3, raytune, hyperopt, elite
 ```
 
 or launch each individually:
@@ -170,6 +175,7 @@ scripts/launch_benchmark.sh random   configs/perlmutter_hpl.yaml --budget 100 --
 scripts/launch_benchmark.sh smac3    configs/perlmutter_hpl.yaml --budget 100 --run-group smac3
 scripts/launch_benchmark.sh raytune  configs/perlmutter_hpl.yaml --budget 100 --run-group raytune
 scripts/launch_benchmark.sh hyperopt configs/perlmutter_hpl.yaml --budget 100 --run-group hyperopt
+scripts/launch_benchmark.sh elite    configs/perlmutter_hpl.yaml --budget 100 --run-group elite
 ```
 
 Each produces `outputs/autotuning/<run_group>/experiment.json` and
@@ -252,8 +258,8 @@ parameters, so pick a discrete optimizer (Random/SMAC3/Ray/Hyperopt).
 
 ## Installation
 
-The six optimizer libraries are **optional** extras. Random Search needs nothing
-beyond the base package:
+The optimizer libraries are **optional** extras. Random Search and Elite Search
+need nothing beyond the base package:
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -384,7 +390,7 @@ autotuner/
     applications/              # Application adapters (hpl, compile_flags, ...)
     core/                      # Parameter, ParameterSpace, Evaluation, paths
     experiments/               # sequential controller, config, jobscript, drivers
-    optimizers/                # six optimizer adapters + registry
+    optimizers/                # optimizer adapters (incl. Elite Search) + registry
     plotting/                  # generalized analysis/plotting
     resources/slurm/           # child job template
     runner/                    # legacy runner (single-task smoke tool)

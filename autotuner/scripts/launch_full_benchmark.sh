@@ -6,8 +6,9 @@
 # PMAP, PFACT, NBMIN, NDIV, RFACT, BCAST, DEPTH, SWAP, L1, U, EQUIL).
 # DEAP and CMA-ES search a continuous space only, so they cannot represent
 # the categorical parameters (notably P) and are intentionally excluded.
+# Elite Search (migrated from HPC-Tools/HPLtuning) handles the discrete set.
 #
-# 100 sequential full-node HPL runs can exceed the regular_1 wall limit
+# 100 sequential full-node HPL runs can exceed the shared wall limit
 # (2 days). The parent jobs are given the maximum wall time and experiments
 # are resumable: if a parent is interrupted, resubmit the same launch and it
 # continues from evaluations.jsonl.
@@ -20,7 +21,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 CONFIG="${1:-configs/perlmutter_hpl.yaml}"
-OPTIMIZERS=(random smac3 raytune hyperopt)
+OPTIMIZERS=(random smac3 raytune hyperopt elite)
 PARENT_TIME="${PARENT_TIME:-47:00:00}"
 
 for OPT in "${OPTIMIZERS[@]}"; do

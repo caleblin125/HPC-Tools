@@ -7,6 +7,7 @@ from .raytune import RayTuneOptimizer
 from .hyperopt import HyperoptOptimizer
 from .deap import DEAPOptimizer
 from .cmaes import CMAESOptimizer
+from .elite import EliteSearchOptimizer
 
 OPTIMIZERS = {
     "random": RandomOptimizer,
@@ -15,6 +16,7 @@ OPTIMIZERS = {
     "hyperopt": HyperoptOptimizer,
     "deap": DEAPOptimizer,
     "cmaes": CMAESOptimizer,
+    "elite": EliteSearchOptimizer,
 }
 
 __all__ = [
@@ -25,6 +27,7 @@ __all__ = [
     "HyperoptOptimizer",
     "DEAPOptimizer",
     "CMAESOptimizer",
+    "EliteSearchOptimizer",
     "OPTIMIZERS",
 ]
 
