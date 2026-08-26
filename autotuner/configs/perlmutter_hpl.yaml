@@ -1,4 +1,4 @@
-# Full HPL benchmark configuration for Perlmutter CPU nodes.
+# Full HPL benchmark configuration for Perlmutter CPU nodes (regular partition).
 #
 # This file is the single place for machine-specific settings (account,
 # partition, QoS, HPL executable, node memory). Nothing here is hard-coded in
@@ -9,7 +9,16 @@
 #   slurm.time               is the HPL *child* job time limit; the parent
 #                            autotuner job should be given a much larger limit
 #                            when launching (see scripts/launch_benchmark.sh
-#                            --time) because it runs 100 sequential children.
+#                            --time) because it runs sequential children.
+#
+# Tunable parameters: the full HPL.dat set (mirrors the HPLtuning work):
+#   N      problem size, bounded by the memory model so memory stays in the
+#          [0.80, 0.96] band of the node (N = floor(sqrt(mem*8)))
+#   NB     blocking factor
+#   P      process grid; Q is derived as ntasks/P because HPL requires
+#          P*Q == ntasks (tuning P therefore also varies Q)
+#   PMAP, PFACT, NBMIN, NDIV, RFACT, BCAST, DEPTH, SWAP, L1, U, EQUIL
+# Everything else (SWAP_THRESH, ALIGN) is fixed and recorded per evaluation.
 
 experiment:
   name: hpl-benchmark
@@ -31,10 +40,24 @@ application:
   # HPL memory model: memory ~= N^2 * 8 bytes * memory_factor (HPL FAQ).
   memory_factor: 1.0
   memory_fraction_bounds: [0.80, 0.96]
+  tunable:
+    - N
+    - NB
+    - P
+    - PMAP
+    - PFACT
+    - NBMIN
+    - NDIV
+    - RFACT
+    - BCAST
+    - DEPTH
+    - SWAP
+    - L1
+    - U
+    - EQUIL
   fixed:
-    NB: 192
-    P: 8
-    Q: 16
+    SWAP_THRESH: 64
+    ALIGN: 8
 
 slurm:
   account: null

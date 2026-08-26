@@ -1,8 +1,9 @@
 # Quick smoke-test configuration: uses a tiny fraction of the node memory so
-# each HPL run finishes in seconds/minutes instead of hours. The full
-# benchmark config (configs/perlmutter_hpl.yaml) uses the real 512 GiB node.
+# each HPL run finishes in seconds/minutes instead of hours. It exercises the
+# same full tunable parameter space as configs/perlmutter_hpl.yaml (N bounded
+# by the memory model, NB, P->Q, and the HPL.dat algorithm choices).
 #
-#   node_memory_bytes: 8GiB  ->  N = sqrt(0.88 * 8GiB / 8) ~= 30,000
+#   node_memory_bytes: 8GiB  ->  N ~= sqrt(0.88 * 8GiB / 8) ~= 30,000
 
 experiment:
   name: hpl-smoke
@@ -21,10 +22,24 @@ application:
   node_memory_bytes: 8GiB
   memory_factor: 1.0
   memory_fraction_bounds: [0.80, 0.96]
+  tunable:
+    - N
+    - NB
+    - P
+    - PMAP
+    - PFACT
+    - NBMIN
+    - NDIV
+    - RFACT
+    - BCAST
+    - DEPTH
+    - SWAP
+    - L1
+    - U
+    - EQUIL
   fixed:
-    NB: 192
-    P: 8
-    Q: 16
+    SWAP_THRESH: 64
+    ALIGN: 8
 
 slurm:
   account: null

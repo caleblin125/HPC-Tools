@@ -51,6 +51,7 @@ class ExperimentConfig:
     node_memory_bytes: int = 512 * 1024**3
     memory_factor: float = 1.0
     memory_fraction_bounds: tuple[float, float] = (0.80, 0.96)
+    tunable: list[str] | None = None
     fixed: dict[str, Any] = field(default_factory=dict)
     slurm: SlurmConfig = field(default_factory=SlurmConfig)
     output_root: str | None = None
@@ -91,6 +92,7 @@ class ExperimentConfig:
             memory_fraction_bounds=tuple(
                 float(v) for v in application.get("memory_fraction_bounds", [0.80, 0.96])
             ),
+            tunable=list(application.get("tunable")) if application.get("tunable") else None,
             fixed=dict(application.get("fixed", {}) or {}),
             slurm=slurm,
             output_root=outputs.get("root"),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 
@@ -138,6 +139,87 @@ def test_legacy_mode_preserves_original_parameter_space():
     command = app.command({"N": 1024, "NB": 128, "P": 2, "Q": 2})
     assert "1024          Ns" in command
     assert "128         NBs" in command
+
+
+# ---------------------------------------------------------------------------
+# full HPL parameter space (mirrors the HPLtuning work)
+# ---------------------------------------------------------------------------
+
+FULL_TUNABLES = [
+    "N", "NB", "P", "PMAP", "PFACT", "NBMIN", "NDIV",
+    "RFACT", "BCAST", "DEPTH", "SWAP", "L1", "U", "EQUIL",
+]
+
+
+def test_full_parameter_space_is_built():
+    app = HPLApplication.for_benchmark(node_memory_bytes=8 * 1024**3, ntasks=128, tunable=FULL_TUNABLES)
+    names = [p.name for p in app.tunable_parameters]
+    for expected in ("N", "NB", "P", "BCAST", "PFACT", "NBMIN", "NDIV", "RFACT", "DEPTH", "SWAP", "L1", "U", "EQUIL"):
+        assert expected in names
+
+    p = next(p for p in app.parameters if p.name == "P")
+    assert p.kind == "categorical"
+    assert p.choices == [1, 2, 4, 8, 16, 32, 64, 128]
+
+    # Q is derived from P (P*Q == ntasks), never an independent parameter.
+    assert all(q.name != "Q" for q in app.parameters)
+
+    # N bounds come from the memory model band [0.80, 0.96].
+    n = next(p for p in app.parameters if p.name == "N")
+    lo = HPLApplication.for_benchmark(node_memory_bytes=8 * 1024**3).memory_fraction_to_n(0.80)
+    hi = HPLApplication.for_benchmark(node_memory_bytes=8 * 1024**3).memory_fraction_to_n(0.96)
+    assert n.bounds == (lo, hi)
+
+    # Remaining parameters stay fixed and are recorded.
+    assert app.fixed_values["SWAP_THRESH"] == 64
+    assert app.fixed_values["ALIGN"] == 8
+
+
+def test_q_is_derived_from_tunable_p():
+    app = HPLApplication.for_benchmark(node_memory_bytes=8 * 1024**3, ntasks=128, tunable=["N", "P"])
+    assert app.resolve_configuration({"N": 30000, "P": 8})["Q"] == 16
+    assert app.resolve_configuration({"N": 30000, "P": 32})["Q"] == 4
+    with pytest.raises(ValueError, match="divide"):
+        app.resolve_configuration({"N": 30000, "P": 7})  # 7 does not divide 128
+
+
+def test_full_configuration_resolves_and_renders_tunable_algorithm_params():
+    app = HPLApplication.for_benchmark(node_memory_bytes=8 * 1024**3, ntasks=128, tunable=FULL_TUNABLES)
+    resolved = app.resolve_configuration({
+        "N": 30000, "NB": 256, "P": 16, "PMAP": 1, "PFACT": 1, "NBMIN": 2,
+        "NDIV": 3, "RFACT": 1, "BCAST": 2, "DEPTH": 3, "SWAP": 1, "L1": 1,
+        "U": 0, "EQUIL": 0,
+    })
+    assert resolved["Q"] == 8
+    assert resolved["target_memory_bytes"] == int(30000**2 * 8)
+
+    command = app.command(resolved)
+    assert "256         NBs" in command
+    assert "16          Ps" in command
+    assert "8          Qs" in command
+    # Tunable algorithm choices must land in HPL.dat (not the fixed defaults).
+    assert "2            BCASTs" in command
+    assert "1            PFACTs" in command
+    assert "3            DEPTHs" in command
+
+
+def test_p_and_q_cannot_both_be_tunable():
+    with pytest.raises(ValueError, match="P and Q"):
+        HPLApplication.for_benchmark(tunable=["N", "P", "Q"])
+
+
+def test_benchmark_config_declares_full_tunable_set():
+    from hpc_autotuner.experiments.common import build_application
+    from hpc_autotuner.experiments.config import ExperimentConfig
+
+    config_path = Path(__file__).resolve().parents[1] / "configs" / "perlmutter_hpl.yaml"
+    config = ExperimentConfig.from_yaml(config_path)
+    app = build_application(config)
+    names = [p.name for p in app.tunable_parameters]
+    assert "N" in names and "NB" in names and "P" in names and "BCAST" in names
+    assert "Q" not in names  # derived from P
+    assert config.slurm.ntasks == 128
+    assert config.slurm.partition == "regular_milan_ss11"
 
 
 # ---------------------------------------------------------------------------

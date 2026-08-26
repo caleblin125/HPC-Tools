@@ -92,6 +92,8 @@ def _build_hpl(config: ExperimentConfig) -> Application:
         node_memory_bytes=config.node_memory_bytes,
         memory_factor=config.memory_factor,
         memory_fraction_bounds=config.memory_fraction_bounds,
+        ntasks=config.slurm.ntasks,
+        tunable=config.tunable,
         fixed=config.fixed,
     )
 

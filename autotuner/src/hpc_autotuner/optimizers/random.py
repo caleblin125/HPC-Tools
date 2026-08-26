@@ -11,7 +11,14 @@ from .base import Optimizer
 class RandomOptimizer(Optimizer):
     """A simple baseline optimizer that samples uniformly from the parameter space."""
 
-    def __init__(self, parameters: list[Parameter], seed: int | None = None) -> None:
+    def __init__(
+        self,
+        parameters: list[Parameter],
+        seed: int | None = None,
+        direction: str = "maximize",
+        n_trials: int | None = None,
+        **kwargs: Any,
+    ) -> None:
         self.parameters = list(parameters)
         self.rng = random.Random(seed)
         self.history: list[dict[str, Any]] = []

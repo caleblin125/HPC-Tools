@@ -67,6 +67,42 @@ class HPLApplication(Application):
         "ALIGN": 8,
     }
 
+    #: The full HPL search space: name -> (kind, bounds/choices, default).
+    #: Bounds follow HPL.dat's documented ranges and the previous HPLtuning
+    #: work (NB ~ 150..400, BCAST 0..2, DEPTH 1..6, ...). ``P``/``Q`` can only
+    #: be tuned one at a time (HPL requires ``P*Q == ntasks``); ``N`` may be
+    #: tuned directly (bounded by the memory model) or via ``memory_fraction``.
+    HPL_PARAMETER_DEFAULTS: dict[str, tuple[str, Any, Any]] = {
+        # problem size: either memory_fraction (derives N) or N directly
+        "memory_fraction": ("float", DEFAULT_MEMORY_FRACTION_BOUNDS, None),
+        "N": ("int", (64, 4096), None),
+        # blocking factor and process grid
+        "NB": ("int", (150, 400), 192),
+        "P": ("int", (1, 128), 8),
+        "Q": ("int", (1, 128), 16),
+        # HPL.dat algorithm choices (HPL 2.3 reference)
+        "PMAP": ("int", (0, 1), 0),
+        "PFACT": ("int", (0, 2), 0),
+        "NBMIN": ("int", (1, 7), 4),
+        "NDIV": ("int", (2, 5), 4),
+        "RFACT": ("int", (0, 2), 0),
+        "BCAST": ("int", (0, 2), 1),
+        "DEPTH": ("int", (1, 6), 1),
+        "SWAP": ("int", (0, 2), 0),
+        "SWAP_THRESH": ("int", (16, 256), 64),
+        "L1": ("int", (0, 1), 0),
+        "U": ("int", (0, 1), 1),
+        "EQUIL": ("int", (0, 1), 1),
+        "ALIGN": ("int", (4, 32), 8),
+    }
+
+    @staticmethod
+    def grid_choices(ntasks: int) -> list[int]:
+        """All valid ``P`` (or ``Q``) values for ``P*Q == ntasks``."""
+        if ntasks < 1:
+            raise ValueError("ntasks must be >= 1")
+        return [d for d in range(1, ntasks + 1) if ntasks % d == 0]
+
     # ------------------------------------------------------------------
     # construction
     # ------------------------------------------------------------------
@@ -84,6 +120,9 @@ class HPLApplication(Application):
         self.memory_factor: float = self.DEFAULT_MEMORY_FACTOR
         self.memory_fraction_bounds: tuple[float, float] = self.DEFAULT_MEMORY_FRACTION_BOUNDS
         self.fixed_hpl_params: dict[str, Any] = dict(self.DEFAULT_FIXED_HPL_PARAMS)
+        self.ntasks: int = 128
+        #: ``"P"`` -> ``Q`` is derived from ``P``; ``"Q"`` -> ``P`` is derived.
+        self._grid_from: str | None = None
 
 
     @classmethod
@@ -94,32 +133,83 @@ class HPLApplication(Application):
         node_memory_bytes: int = DEFAULT_NODE_MEMORY_BYTES,
         memory_factor: float = DEFAULT_MEMORY_FACTOR,
         memory_fraction_bounds: tuple[float, float] = DEFAULT_MEMORY_FRACTION_BOUNDS,
+        ntasks: int = 128,
+        tunable: list[str] | None = None,
         fixed: dict[str, Any] | None = None,
     ) -> "HPLApplication":
-        """Build an HPL application configured for the benchmark experiment.
+        """Build an HPL application for the benchmark experiment.
 
-        ``memory_fraction`` (a float in ``memory_fraction_bounds``) is the only
-        tunable; everything else is fixed. ``fixed`` may override the default
-        ``NB``/``P``/``Q`` values and any HPL.dat algorithm choice.
+        ``tunable`` names the HPL parameters the optimizers may vary (default:
+        ``["memory_fraction"]``); every other parameter is pinned to ``fixed``
+        values or the defaults in :data:`HPL_PARAMETER_DEFAULTS`.
+
+        * The problem size is set either through ``memory_fraction`` (``N`` is
+          derived from the memory model) or directly through ``N`` (bounded by
+          the memory model).
+        * ``P`` and ``Q`` cannot both be tuned because HPL requires
+          ``P*Q == ntasks``; tuning one makes the other derived
+          (``Q = ntasks // P``).
+        * All other HPL.dat parameters (``NB``, ``BCAST``, ``PFACT``, ...) may
+          be tuned or fixed.
         """
         app = cls(executable=executable)
         app.node_memory_bytes = int(node_memory_bytes)
         app.memory_factor = float(memory_factor)
         app.memory_fraction_bounds = tuple(float(v) for v in memory_fraction_bounds)
-        app.fixed_hpl_params.update(fixed or {})
+        app.ntasks = int(ntasks)
+        if app.ntasks < 1:
+            raise ValueError("ntasks must be >= 1")
         lo, hi = app.memory_fraction_bounds
         if not 0.0 < lo < hi:
             raise ValueError(f"Invalid memory_fraction bounds: {app.memory_fraction_bounds}")
+        app.fixed_hpl_params.update(fixed or {})
 
-        nb = int(app.fixed_hpl_params.get("NB", 192))
-        p = int(app.fixed_hpl_params.get("P", 8))
-        q = int(app.fixed_hpl_params.get("Q", 16))
-        fixed_params = [
-            Parameter("NB", "int", bounds=(1, 1024), fixed_value=nb),
-            Parameter("P", "int", bounds=(1, 128), fixed_value=p),
-            Parameter("Q", "int", bounds=(1, 128), fixed_value=q),
-        ]
-        app.parameters = [Parameter("memory_fraction", "float", bounds=(lo, hi)), *fixed_params]
+        tunable = list(tunable or ["memory_fraction"])
+        unknown = [name for name in tunable if name not in cls.HPL_PARAMETER_DEFAULTS]
+        if unknown:
+            raise ValueError(f"Unknown tunable HPL parameter(s): {sorted(unknown)}")
+        if "P" in tunable and "Q" in tunable:
+            raise ValueError(
+                "P and Q cannot both be tunable: HPL requires P*Q == ntasks. "
+                "Tune one; the other is derived."
+            )
+        if "memory_fraction" in tunable and "N" in tunable:
+            raise ValueError(
+                "Tune either memory_fraction or N, not both (N is derived from memory_fraction)."
+            )
+
+        app._grid_from = "P" if "P" in tunable else ("Q" if "Q" in tunable else None)
+
+        parameters: list[Parameter] = []
+        for name in tunable:
+            kind, bounds, _default = cls.HPL_PARAMETER_DEFAULTS[name]
+            if name == "P":
+                parameters.append(Parameter("P", "categorical", choices=cls.grid_choices(app.ntasks)))
+            elif name == "Q":
+                p = int(app.fixed_hpl_params.get("P", 8))
+                parameters.append(Parameter("Q", "categorical", choices=cls.grid_choices(app.ntasks // p)))
+            elif name == "memory_fraction":
+                parameters.append(Parameter("memory_fraction", "float", bounds=(lo, hi)))
+            elif name == "N":
+                parameters.append(
+                    Parameter("N", "int", bounds=(app.memory_fraction_to_n(lo), app.memory_fraction_to_n(hi)))
+                )
+            else:
+                parameters.append(Parameter(name, kind, bounds=bounds))
+
+        for name, (kind, bounds, default) in cls.HPL_PARAMETER_DEFAULTS.items():
+            if name in tunable:
+                continue
+            if name in ("memory_fraction", "N"):
+                continue  # the problem-size knob is the tunable one
+            if app._grid_from == "P" and name == "Q":
+                continue  # Q is derived from tunable P
+            if app._grid_from == "Q" and name == "P":
+                continue  # P is derived from tunable Q
+            value = app.fixed_hpl_params.get(name, default)
+            parameters.append(Parameter(name, kind, bounds=bounds, fixed_value=value))
+
+        app.parameters = parameters
         return app
 
     # ------------------------------------------------------------------
@@ -150,24 +240,42 @@ class HPLApplication(Application):
     def resolve_configuration(self, configuration: dict[str, Any]) -> dict[str, Any]:
         """Return the full logged configuration for an evaluation.
 
-        Merges the fixed HPL parameters with the tunable values suggested by
-        the optimizer and derives ``N`` (and ``target_memory_bytes``) from
-        ``memory_fraction``. In legacy mode the configuration is returned as
-        provided.
+        Merges fixed HPL parameters with the optimizer's tunable values; derives
+        ``N`` (and ``target_memory_bytes``) from ``memory_fraction`` when that
+        knob is used, and derives ``Q`` from ``P`` (or ``P`` from ``Q``) so the
+        HPL process grid always matches the Slurm task count.
         """
         resolved: dict[str, Any] = dict(configuration)
-        if "memory_fraction" not in resolved:
-            return resolved
-        memory_fraction = float(resolved["memory_fraction"])
-        if not self.memory_fraction_bounds[0] <= memory_fraction <= self.memory_fraction_bounds[1]:
-            raise ValueError(
-                f"memory_fraction={memory_fraction!r} outside bounds "
-                f"{self.memory_fraction_bounds}"
+
+        if self._grid_from == "P" and "P" in resolved and "Q" not in resolved:
+            p = int(resolved["P"])
+            if self.ntasks % p != 0:
+                raise ValueError(f"P={p} does not divide the task count {self.ntasks}")
+            resolved["Q"] = self.ntasks // p
+        elif self._grid_from == "Q" and "Q" in resolved and "P" not in resolved:
+            q = int(resolved["Q"])
+            p = int(self.fixed_hpl_params.get("P", 8))
+            if p * q != self.ntasks:
+                raise ValueError(f"P={p} x Q={q} does not match the task count {self.ntasks}")
+            resolved["P"] = p
+
+        if "memory_fraction" in resolved:
+            memory_fraction = float(resolved["memory_fraction"])
+            if not self.memory_fraction_bounds[0] <= memory_fraction <= self.memory_fraction_bounds[1]:
+                raise ValueError(
+                    f"memory_fraction={memory_fraction!r} outside bounds {self.memory_fraction_bounds}"
+                )
+            resolved["target_memory_bytes"] = self.target_memory_bytes(memory_fraction)
+            resolved["N"] = self.memory_fraction_to_n(memory_fraction)
+        elif "N" in resolved:
+            n = int(resolved["N"])
+            resolved["target_memory_bytes"] = int(
+                n**2 * self.BYTES_PER_DOUBLE * self.memory_factor
             )
-        resolved["target_memory_bytes"] = self.target_memory_bytes(memory_fraction)
-        resolved["N"] = self.memory_fraction_to_n(memory_fraction)
-        for key, value in self.fixed_hpl_params.items():
-            resolved.setdefault(key, value)
+
+        for parameter in self.parameters:
+            if parameter.fixed_value is not None:
+                resolved.setdefault(parameter.name, parameter.fixed_value)
         return resolved
 
 
@@ -195,7 +303,10 @@ class HPLApplication(Application):
         nb = int(configuration.get("NB", 64))
         p = int(configuration.get("P", 1))
         q = int(configuration.get("Q", 1))
-        params = self.fixed_hpl_params
+        # Resolved configurations carry every fixed and tunable HPL parameter,
+        # so tunable algorithm choices take effect here (fixed values serve as
+        # defaults for direct legacy-mode calls).
+        params = {key: configuration.get(key, default) for key, default in self.fixed_hpl_params.items()}
         executable = str(self.executable)
 
         # Stage a per-job HPL.dat on the shared filesystem (under the Slurm
