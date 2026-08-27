@@ -8,7 +8,7 @@
 # the categorical parameters (notably P) and are intentionally excluded.
 # Elite Search (migrated from HPC-Tools/HPLtuning) handles the discrete set.
 #
-# 100 sequential full-node HPL runs can exceed the shared wall limit
+# 100 sequential full-node HPL runs can exceed the regular wall limit
 # (2 days). The parent jobs are given the maximum wall time and experiments
 # are resumable: if a parent is interrupted, resubmit the same launch and it
 # continues from evaluations.jsonl.

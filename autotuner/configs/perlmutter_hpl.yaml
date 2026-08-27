@@ -1,9 +1,9 @@
 # Full HPL benchmark configuration for Perlmutter CPU nodes.
 #
-# Job structure follows the NERSC convention: the QoS (shared) and constraint
-# (cpu) determine the queue, so no --partition is needed; the account charges
-# the allocation. Nothing here is hard-coded in the framework, so the same code
-# runs on any Slurm cluster.
+# Job structure follows the NERSC convention: the QoS (regular_1) and
+# constraint (cpu) determine the queue, so no --partition is needed; the
+# account charges the allocation. Nothing here is hard-coded in the framework,
+# so the same code runs on any Slurm cluster.
 #
 #   experiment.optimizer     is overridden by the six drivers (random, smac3,
 #                            raytune, hyperopt, deap, cmaes).
@@ -14,8 +14,8 @@
 #
 # Tunable parameters: the full HPL.dat set (mirrors the HPLtuning work):
 #   N      problem size, bounded by the memory model so memory stays in the
-#          [0.80, 0.90] band of the node's target HPL memory
-#          (N = floor(sqrt(mem * 8)); max problem size at 100% ~= 174500)
+#          [0.80, 0.90] band of the target HPL memory
+#          (N = floor(sqrt(mem * 8)); max problem size at 100% ~= 123450)
 #   NB     blocking factor
 #   P      process grid; Q is derived as ntasks/P because HPL requires
 #          P*Q == ntasks (tuning P therefore also varies Q)
@@ -37,8 +37,9 @@ application:
   type: hpl
   # Perlmutter CPU-node xhpl built with the Cray MPI wrapper.
   executable: /global/common/software/m4007/opt/hpl-2.3/bin/xhpl
-  # Target HPL memory: N = sqrt(243840 MB / 8) ~= 174500 at 100%.
-  node_memory_bytes: 243840MB
+  # Half of the full node's target HPL memory (243840 MB) to reduce runtime:
+  # N = sqrt(121920 MB / 8) ~= 123450 at 100%.
+  node_memory_bytes: 121920MB
   # HPL memory model: memory ~= N^2 * 8 bytes (HPL FAQ).
   memory_factor: 1.0
   memory_fraction_bounds: [0.80, 0.90]
@@ -64,7 +65,7 @@ application:
 slurm:
   account: m4007
   partition: null
-  qos: shared
+  qos: regular_1
   constraint: cpu
   time: "08:00:00"
   exclusive: false

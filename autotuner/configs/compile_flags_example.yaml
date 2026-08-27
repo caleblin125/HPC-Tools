@@ -27,7 +27,7 @@ application:
 slurm:
   account: m4007
   partition: null
-  qos: shared
+  qos: regular_1
   constraint: cpu
   time: "00:10:00"
   exclusive: false
