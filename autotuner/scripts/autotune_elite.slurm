@@ -11,7 +11,7 @@
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -J autotune-elite
-#SBATCH -q regular_1
+#SBATCH -q regular
 #SBATCH --constraint=cpu
 #SBATCH --output=outputs/slurm/autotune_elite_%j.out
 #SBATCH --error=outputs/slurm/autotune_elite_%j.err

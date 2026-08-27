@@ -1,6 +1,6 @@
 # Full HPL benchmark configuration for Perlmutter CPU nodes.
 #
-# Job structure follows the NERSC convention: the QoS (regular_1) and
+# Job structure follows the NERSC convention: the QoS (regular) and
 # constraint (cpu) determine the queue, so no --partition is needed; the
 # account charges the allocation. Nothing here is hard-coded in the framework,
 # so the same code runs on any Slurm cluster.
@@ -65,7 +65,7 @@ application:
 slurm:
   account: m4007
   partition: null
-  qos: regular_1
+  qos: regular
   constraint: cpu
   time: "08:00:00"
   exclusive: false

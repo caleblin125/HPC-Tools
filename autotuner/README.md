@@ -301,7 +301,7 @@ application:
 slurm:
   account: null          # machine-specific; set here or on the sbatch command line
   partition: null
-  qos: regular_1          # regular CPU queue on Perlmutter (no partition needed)
+  qos: regular           # regular CPU queue on Perlmutter (no partition needed)
   constraint: cpu
   time: "00:30:00"       # child job time limit (the parent should get more)
   exclusive: false

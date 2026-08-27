@@ -10,7 +10,7 @@
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -J autotune-smac3
-#SBATCH -q regular_1
+#SBATCH -q regular
 #SBATCH --constraint=cpu
 #SBATCH --output=outputs/slurm/autotune_smac3_%j.out
 #SBATCH --error=outputs/slurm/autotune_smac3_%j.err
