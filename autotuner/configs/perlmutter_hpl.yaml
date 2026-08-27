@@ -14,7 +14,8 @@
 #
 # Tunable parameters: the full HPL.dat set (mirrors the HPLtuning work):
 #   N      problem size, bounded by the memory model so memory stays in the
-#          [0.80, 0.96] band of the node (N = floor(sqrt(mem*8)))
+#          [0.80, 0.90] band of the node's target HPL memory
+#          (N = floor(sqrt(mem * 8)); max problem size at 100% ~= 174500)
 #   NB     blocking factor
 #   P      process grid; Q is derived as ntasks/P because HPL requires
 #          P*Q == ntasks (tuning P therefore also varies Q)
@@ -36,11 +37,11 @@ application:
   type: hpl
   # Perlmutter CPU-node xhpl built with the Cray MPI wrapper.
   executable: /global/common/software/m4007/opt/hpl-2.3/bin/xhpl
-  # Perlmutter CPU node: 128 cores, 512 GiB RAM.
-  node_memory_bytes: 512GiB
-  # HPL memory model: memory ~= N^2 * 8 bytes * memory_factor (HPL FAQ).
+  # Target HPL memory: N = sqrt(243840 MB / 8) ~= 174500 at 100%.
+  node_memory_bytes: 243840MB
+  # HPL memory model: memory ~= N^2 * 8 bytes (HPL FAQ).
   memory_factor: 1.0
-  memory_fraction_bounds: [0.80, 0.96]
+  memory_fraction_bounds: [0.80, 0.90]
   tunable:
     - N
     - NB

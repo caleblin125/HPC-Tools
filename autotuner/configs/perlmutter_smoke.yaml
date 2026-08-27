@@ -1,9 +1,9 @@
 # Quick smoke-test configuration: uses a tiny fraction of the node memory so
 # each HPL run finishes in seconds/minutes instead of hours. It exercises the
-# same full tunable parameter space as configs/perlmutter_hpl.yaml (N bounded
-# by the memory model, NB, P->Q, and the HPL.dat algorithm choices).
+# same full tunable parameter space and the same [0.80, 0.90] memory-fraction
+# range as configs/perlmutter_hpl.yaml.
 #
-#   node_memory_bytes: 8GiB  ->  N ~= sqrt(0.88 * 8GiB / 8) ~= 30,000
+#   node_memory_bytes: 8GiB  ->  N ~= sqrt(0.85 * 8GiB / 8) ~= 30,500
 
 experiment:
   name: hpl-smoke
@@ -21,7 +21,7 @@ application:
   executable: /global/common/software/m4007/opt/hpl-2.3/bin/xhpl
   node_memory_bytes: 8GiB
   memory_factor: 1.0
-  memory_fraction_bounds: [0.80, 0.96]
+  memory_fraction_bounds: [0.80, 0.90]
   tunable:
     - N
     - NB

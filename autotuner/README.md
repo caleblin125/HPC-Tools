@@ -114,10 +114,12 @@ The reference experiment tunes HPL on a full Perlmutter CPU node (1 node,
 128 tasks) and compares the seven optimizers on identical terms.
 
 * **Problem size.** The tunable problem size is `N`, bounded by the memory
-  model so the HPL matrix stays within `[0.80, 0.96]` of the node's ~512 GiB.
-  Following the HPL FAQ, `memory ≈ N² × 8 bytes × memory_factor`, so the
-  bounds are `N ∈ [⌊√(0.80·mem/8)⌋, ⌊√(0.96·mem/8)⌋]` (~234k–257k on a
-  512 GiB node). Every evaluation records `N` and `target_memory_bytes`.
+  model so the HPL matrix stays within `[0.80, 0.90]` of the node's target HPL
+  memory of `243840 MB` (~238 GiB). Following the HPL FAQ,
+  `memory ≈ N² × 8 bytes`, so the bounds are
+  `N ∈ [⌊√(0.80·mem/8)⌋, ⌊√(0.90·mem/8)⌋]` (~156k–166k). The maximum problem
+  size at 100% memory is `√(243840 MB / 8) ≈ 174500`. Every evaluation records
+  `N` and `target_memory_bytes`.
 * **Full HPL.dat parameter space** (mirrors the previous `HPLtuning` work):
   `NB`, `P`, `PMAP`, `PFACT`, `NBMIN`, `NDIV`, `RFACT`, `BCAST`, `DEPTH`,
   `SWAP`, `L1`, `U`, `EQUIL` are tunable. Because HPL requires
