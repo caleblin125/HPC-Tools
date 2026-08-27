@@ -189,14 +189,21 @@ def _submit_with_retries(
     scheduler: Scheduler, script_path: Path, *, retries: int, log: Logger
 ) -> str:
     last_error: Exception | None = None
-    for attempt_no in range(1, retries + 1):
+    attempt_no = 0
+    while True:
+        attempt_no += 1
+        if retries is not None and attempt_no > retries:
+            break
         try:
             return scheduler.submit(str(script_path))
         except Exception as exc:
             last_error = exc
-            if attempt_no < retries:
-                backoff = 5 * attempt_no
-                log(f"    sbatch failed (attempt {attempt_no}/{retries}): {exc}; retrying in {backoff}s")
+            if retries is None or attempt_no < retries:
+                # Back off to at most 60s so a long cluster outage keeps the
+                # controller alive and retrying instead of giving up.
+                backoff = min(5 * attempt_no, 60.0)
+                label = "unlimited" if retries is None else retries
+                log(f"    sbatch failed (attempt {attempt_no}/{label}): {exc}; retrying in {backoff:.0f}s")
                 time.sleep(backoff)
     assert last_error is not None
     raise RuntimeError(f"sbatch failed after {retries} attempts: {last_error}") from last_error

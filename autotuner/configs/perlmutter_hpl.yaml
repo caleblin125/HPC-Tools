@@ -71,7 +71,7 @@ slurm:
   exclusive: false
   nodes: 1
   ntasks: 128
-  submit_retries: 3
+  submit_retries: 100000
   polling_interval: 60
 
 outputs:
