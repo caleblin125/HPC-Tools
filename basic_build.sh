@@ -85,6 +85,16 @@ basic_cmake_github(){
         #configure
         cd $clonepath || return 1
         echo "=== Configuring $name ==="
+        # Generate configure if the repository only provides configure.ac
+        if [[ ! -x "./configure" ]]; then
+            if [[ -f "./configure.ac" || -f "./configure.in" ]]; then
+                echo "=== Generating configure for $name ==="
+                autoreconf -fi || return 1
+            else
+                echo "ERROR: No configure script or configure.ac/configure.in found"
+                return 1
+            fi
+        fi
         ./configure --prefix=$installpath "${cmake_args[@]}" || return 1
         echo "=== Building $name ==="
         make -j$(nproc) all || return 1

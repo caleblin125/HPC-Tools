@@ -16,38 +16,51 @@ add_build() {
         return 1
     fi
 
-    # If name not provided, use basename
+    # Default name = basename of prefix
     [[ -z "$name" ]] && name="$(basename "$prefix")"
 
-    # Add bin
-    [[ -d "$prefix/bin" ]] && export PATH="$prefix/bin:$PATH"
+    # Convert name to uppercase and replace non-alphanumeric
+    # characters with underscores.
+    local uname
+    uname="$(printf '%s' "$name" | tr '[:lower:]-.' '[:upper:]__')"
 
-    # Add lib or lib64
+    # Add bin
+    if [[ -d "$prefix/bin" ]]; then
+        export PATH="$prefix/bin:$PATH"
+    fi
+
+    # Determine library directory
+    local libdir=""
     if [[ -d "$prefix/lib" ]]; then
-        export LD_LIBRARY_PATH="$prefix/lib:${LD_LIBRARY_PATH:-}"
-        export LIBRARY_PATH="$prefix/lib:${LIBRARY_PATH:-}"
-        #Export Variables
-        declare -x "${name^^}_LIBRARY=$prefix/lib"
+        libdir="$prefix/lib"
     elif [[ -d "$prefix/lib64" ]]; then
-        export LD_LIBRARY_PATH="$prefix/lib64:${LD_LIBRARY_PATH:-}"
-        export LIBRARY_PATH="$prefix/lib64:${LIBRARY_PATH:-}"
-        #Export Variables
-        declare -x "${name^^}_LIBRARY=$prefix/lib"
+        libdir="$prefix/lib64"
+    fi
+
+    if [[ -n "$libdir" ]]; then
+        export LD_LIBRARY_PATH="$libdir:${LD_LIBRARY_PATH:-}"
+        export LIBRARY_PATH="$libdir:${LIBRARY_PATH:-}"
+
+        export "${uname}_LIBRARY=$libdir"
     fi
 
     # Add include
-    [[ -d "$prefix/include" ]] && {
+    if [[ -d "$prefix/include" ]]; then
         export CPATH="$prefix/include:${CPATH:-}"
         export C_INCLUDE_PATH="$prefix/include:${C_INCLUDE_PATH:-}"
         export CPLUS_INCLUDE_PATH="$prefix/include:${CPLUS_INCLUDE_PATH:-}"
-        # Export variables
-        declare -x "${name^^}_INCLUDE_DIR=$prefix/include"
-    }
+
+        export "${uname}_INCLUDE_DIR=$prefix/include"
+    fi
 
     # Add CMake prefix path
     export CMAKE_PREFIX_PATH="$prefix:${CMAKE_PREFIX_PATH:-}"
 
-    echo "Added build prefix: $prefix"
+    echo "Added build prefix:"
+    echo "  Name:   $uname"
+    echo "  Prefix: $prefix"
+    [[ -n "$libdir" ]] && echo "  Library: $libdir"
+    [[ -d "$prefix/include" ]] && echo "  Include: $prefix/include"
 }
 
 # Remove a build prefix from environment variables and unset exported variables
